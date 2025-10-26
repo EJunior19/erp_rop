@@ -174,36 +174,55 @@ class SupplierController extends Controller
         return redirect()
             ->route('suppliers.index')
             ->with('success','Proveedor eliminado');
+}
+/** Autocomplete JSON */
+public function search(Request $request)
+{
+    $q = trim($request->query('q', ''));
+    if ($q === '') {
+        return response()->json([]);
     }
 
-    /** Autocomplete JSON */
-    public function search(Request $request)
-    {
-        $q = trim($request->query('q', ''));
-        if ($q === '') {
-            return response()->json([]);
-        }
+    $driver = DB::connection()->getDriverName();  // mysql, pgsql, sqlite...
+    $like   = $driver === 'pgsql' ? 'ILIKE' : 'LIKE';
+    $needle = "%{$q}%";
 
-        $driver = DB::connection()->getDriverName();  // mysql, pgsql, sqlite...
-        $like   = $driver === 'pgsql' ? 'ILIKE' : 'LIKE';
-        $needle = "%{$q}%";
+    $suppliers = DB::table('suppliers as s')
+        ->leftJoin('supplier_phones as p', function ($join) {
+            $join->on('p.supplier_id', '=', 's.id')
+                 ->where('p.is_primary', true)
+                 ->where('p.is_active', true);
+        })
+        ->leftJoin('supplier_addresses as a', function ($join) {
+            $join->on('a.supplier_id', '=', 's.id')
+                 ->where('a.is_primary', true);
+        })
+        ->leftJoin('supplier_emails as e', 'e.supplier_id', '=', 's.id')
+        ->where('s.active', true)
+        ->where(function ($w) use ($like, $needle, $q) {
+            $w->where('s.name', $like, $needle)
+              ->orWhere('s.ruc', $like, $needle);
 
-        $suppliers = Supplier::query()
-            ->where('active', true)
-            ->where(function ($w) use ($like, $needle, $q) {
-                $w->where('name', $like, $needle)
-                  ->orWhere('ruc',  $like, $needle);
+            if (ctype_digit($q)) {
+                $w->orWhere('s.id', (int) $q);
+            }
+        })
+        ->select(
+            's.id',
+            's.name',
+            's.ruc',
+            DB::raw('COALESCE(p.phone_number, \'\') as phone'),
+            DB::raw('COALESCE(e.email, \'\') as email'),
+            DB::raw('COALESCE(a.street, \'\') as address')
+        )
+        ->orderBy('s.name')
+        ->limit(10)
+        ->get();
 
-                if (ctype_digit($q)) {
-                    $w->orWhere('id', (int) $q);
-                }
-            })
-            ->orderBy('name')
-            ->limit(10)
-            ->get(['id','name','ruc','phone','email','address']);
+    return response()->json($suppliers);
+}
 
-        return response()->json($suppliers);
-    }
+ 
         // ================== GESTIÓN DE TELÉFONOS Y DIRECCIONES ==================
         public function storeAddress(Request $request, Supplier $supplier)
         {

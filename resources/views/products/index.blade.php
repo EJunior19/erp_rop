@@ -3,7 +3,7 @@
 
 @section('content')
 <div class="flex items-center justify-between mb-6">
-  <h1 class="text-2xl font-bold text-gray-200">📦 Productos</h1>
+  <h1 class="text-2xl font-bold text-black-200">📦 Productos</h1>
 
   {{-- Botón para crear nuevo producto --}}
   <x-create-button route="{{ route('products.create') }}" text="Nuevo producto" />

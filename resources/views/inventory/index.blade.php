@@ -9,7 +9,7 @@
   
   <div class="flex gap-2">
     {{-- Botón Volver --}}
-    <a href="{{ route('dashboar.index') }}" 
+    <a href="{{ route('dashboard.index') }}" 
        class="inline-flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg shadow hover:bg-gray-600 transition">
       ⬅️ Volver
     </a>

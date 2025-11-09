@@ -23,7 +23,7 @@ class ReportController extends Controller
             ->orderBy('created_at','desc')
             ->get();
 
-        return view('reports.sales', compact('sales'));
+        return view('purchases.reports.sales', compact('sales'));
     }
 
     public function salesPdf(Request $request) {
@@ -120,7 +120,7 @@ class ReportController extends Controller
             ->orderBy('created_at','desc')
             ->get();
 
-        return view('reports.inventory', compact('movements'));
+        return view('purchases.reports.inventory', compact('movements'));
     }
 
     public function inventoryPdf(Request $request) {

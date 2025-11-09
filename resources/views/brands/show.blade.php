@@ -7,9 +7,6 @@
     🏷️ Marca #{{ $brand->id }}
   </h1>
 
-  {{-- Flash global --}}
-  <x-flash-message />
-
   <div class="bg-gray-900 text-white rounded-xl shadow-2xl p-8 border-2 border-green-400 w-full">
     {{-- Datos principales --}}
     <div class="grid md:grid-cols-2 gap-8 text-lg">

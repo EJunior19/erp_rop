@@ -104,7 +104,7 @@
             <td class="px-4 py-3">
               <x-status-badge
                 :color="$s->status === 'aprobado' ? 'emerald' : ($s->status === 'rechazado' ? 'red' : 'amber')"
-                :label="ucfirst($s->estado ?? 'pendiente')" />
+                :label="ucfirst($s->status ?? 'pendiente')" />
             </td>
             <td class="px-4 py-3 font-semibold text-emerald-400 text-right">
               Gs. {{ number_format((int)($s->total ?? 0), 0, ',', '.') }}

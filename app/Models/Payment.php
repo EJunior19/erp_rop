@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
-
+use App\Models\ProductImage;
 /**
  * Modelo Payment
  * ---------------------
@@ -123,5 +123,16 @@ class Payment extends Model
 
             $credit->save();
         });
+    }
+
+    /* =========================
+     * Relaciones adicionales
+     * ========================= */
+    public function images() {
+    return $this->hasMany(\App\Models\ProductImage::class)
+        ->orderBy('sort_order')->orderBy('id');
+    }
+    public function coverImage() {
+        return $this->hasOne(\App\Models\ProductImage::class)->where('is_cover', true);
     }
 }

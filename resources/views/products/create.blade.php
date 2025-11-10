@@ -14,7 +14,8 @@
   </div>
 @endif
 
-<form method="POST" action="{{ route('products.store') }}" 
+<form method="POST" action="{{ route('products.store') }}"
+      enctype="multipart/form-data"
       class="bg-gray-900 text-white rounded shadow p-4 space-y-4">
   @csrf
 
@@ -98,6 +99,22 @@
     </button>
   </div>
 
+  {{-- 🔹 Imágenes (múltiples + elegir portada) --}}
+  <div>
+    <label class="block mb-1 font-medium">Fotos del producto</label>
+    <input type="file" name="images[]" multiple accept="image/*"
+           class="w-full px-3 py-2 rounded bg-gray-800 border border-gray-700">
+    <p class="text-sm text-gray-400 mt-1">
+      Podés seleccionar varias. Elegí abajo cuál será la <strong>portada</strong>. Máx 4MB c/u.
+    </p>
+
+    {{-- índice de la portada entre los nuevos archivos --}}
+    <input type="hidden" name="cover_index" id="cover_index" value="0">
+
+    {{-- Previsualización con radios para portada --}}
+    <div id="preview" class="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+  </div>
+
   {{-- 🔹 Activo --}}
   <div class="flex items-center">
     <input type="hidden" name="active" value="0">
@@ -117,14 +134,14 @@
   {{-- 🔹 Acciones --}}
   <div class="flex gap-2 mt-4">
     <button class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Guardar</button>
-    <a href="{{ route('products.index') }}" 
+    <a href="{{ route('products.index') }}"
        class="px-4 py-2 border border-gray-400 text-gray-400 rounded hover:bg-gray-500 hover:text-white">
        Cancelar
     </a>
   </div>
 </form>
 
-{{-- 🔹 Script JS para manejar cuotas dinámicas + máscara de miles --}}
+{{-- 🔹 Scripts: cuotas dinámicas + máscara de miles + preview imágenes con portada --}}
 @push('scripts')
 <script>
   // Máscara visual para inputs monetarios (puntos de miles). El backend limpia.
@@ -158,6 +175,49 @@
         e.target.closest('.installment-row').remove();
     }
   });
+
+  // Preview de imágenes seleccionadas + elegir portada (cover_index)
+  (function(){
+    const fileInput = document.querySelector('input[name="images[]"]');
+    const preview   = document.getElementById('preview');
+    const coverIdx  = document.getElementById('cover_index');
+
+    if (!fileInput || !preview || !coverIdx) return;
+
+    fileInput.addEventListener('change', () => {
+      preview.innerHTML = '';
+      const files = Array.from(fileInput.files || []);
+      files.forEach((file, idx) => {
+        if (!file.type.startsWith('image/')) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const isDefault = idx === 0;
+          const cont = document.createElement('label');
+          cont.className = 'relative rounded border border-gray-700 p-2 block cursor-pointer';
+          cont.innerHTML = `
+            <img src="${e.target.result}" class="w-full h-32 object-cover rounded">
+            <div class="flex items-center justify-between mt-2 text-xs text-gray-300">
+              <span class="truncate pr-2">${file.name}</span>
+              <span class="inline-flex items-center gap-1">
+                <input type="radio" name="cover_index_radio" value="${idx}" ${isDefault ? 'checked' : ''}>
+                Portada
+              </span>
+            </div>
+          `;
+          preview.appendChild(cont);
+          if (isDefault) coverIdx.value = '0';
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+
+    // Mantener sincronizado el hidden cover_index
+    document.addEventListener('change', (e) => {
+      if (e.target && e.target.name === 'cover_index_radio') {
+        coverIdx.value = String(e.target.value || '0');
+      }
+    });
+  })();
 </script>
 @endpush
 

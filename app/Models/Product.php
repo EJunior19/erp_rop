@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Models\ProductImage;
 
 class Product extends Model
 {
@@ -39,5 +40,15 @@ class Product extends Model
     public function installments()
     {
         return $this->hasMany(ProductInstallment::class);
+    }
+    /* =========================
+     * Relaciones adicionales
+     * ========================= */
+    public function images() {
+    return $this->hasMany(\App\Models\ProductImage::class)
+        ->orderBy('sort_order')->orderBy('id');
+    }
+    public function coverImage() {
+        return $this->hasOne(\App\Models\ProductImage::class)->where('is_cover', true);
     }
 }

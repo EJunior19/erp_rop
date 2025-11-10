@@ -13,9 +13,22 @@
   <div class="bg-gray-900 text-white rounded-xl shadow-2xl p-8 border-2 border-green-400 w-full">
 
     @php
-      $images   = $product->images ?? collect();
-      $cover    = $product->coverImage ?? $images->first();
-      $coverUrl = $cover? asset('storage/'.$cover->path) : asset('img/placeholder.png');
+      use Illuminate\Support\Facades\Storage;
+      use Illuminate\Support\Str;
+
+       // Relaciones (por si el controlador no las cargó)
+      $images = ($product->relationLoaded('images') ? $product->images : $product->images()->get()) ?? collect();
+      $cover  = $product->relationLoaded('coverImage') ? $product->coverImage : $product->coverImage()->first();
+      if (!$cover) { $cover = $images->first(); }
+
+      // Helper que NO usa APP_URL. Devuelve /storage/...
+      $toPublicUrl = function ($path) {
+          if (!$path) return null;
+          $clean = ltrim(Str::of($path)->replaceFirst('public/', ''), '/'); // asegura 'products/...'
+          return '/storage/'.$clean; // URL relativa, sirve en local y prod
+      };
+
+      $coverUrl = $cover ? $toPublicUrl($cover->path) : asset('img/placeholder.png');
     @endphp
 
     {{-- Galería + Datos principales --}}
@@ -27,7 +40,7 @@
           <div class="w-full h-80 sm:h-96 flex items-center justify-center">
             <img id="mainImage"
                  src="{{ $coverUrl }}"
-                 alt="{{ $product->name }}"
+                 alt="{{ $cover->alt ?? $product->name }}"
                  class="max-h-full max-w-full object-contain cursor-zoom-in transition-transform"
                  data-idx="{{ $cover ? $images->search(fn($i)=>$i->id===$cover->id) : 0 }}">
           </div>
@@ -38,7 +51,7 @@
           <div class="mt-3 grid grid-cols-4 sm:grid-cols-6 gap-2">
             @foreach($images as $i => $img)
               @php
-                $thumbUrl = asset('storage/'.$img->path);
+                $thumbUrl = $toPublicUrl($img->path);
                 $isActive = $cover && $cover->id === $img->id;
               @endphp
               <button type="button"
@@ -271,7 +284,7 @@
   function openLightbox(idx = 0) {
     if (!gallery.length) return;
     current = Math.max(0, Math.min(idx, gallery.length - 1));
-    lbImg.src = gallery[current] || mainImg.src;
+    lbImg.src = gallery[current] || (document.getElementById('mainImage')?.src ?? '');
     lb.classList.remove('hidden');
     document.body.classList.add('overflow-hidden');
   }
@@ -294,9 +307,10 @@
   }
 
   // Abrir con click en la imagen principal
-  if (mainImg) {
-    mainImg.addEventListener('click', () => {
-      const idx = parseInt(mainImg.dataset.idx || '0', 10);
+  const mainImageEl = document.getElementById('mainImage');
+  if (mainImageEl) {
+    mainImageEl.addEventListener('click', () => {
+      const idx = parseInt(mainImageEl.dataset.idx || '0', 10);
       openLightbox(idx);
     });
   }

@@ -7,19 +7,34 @@ use Illuminate\Database\Eloquent\Model;
 class Sale extends Model
 {
     protected $fillable = [
-        'client_id','modo_pago','fecha','nota','estado',
+        'client_id','modo_pago','fecha','nota','estado','status',
         'total','gravada_10','iva_10','gravada_5','iva_5','exento','total_iva',
+
+        // ✅ crédito (para triggers)
+        'credit_installments',
+        'credit_first_due_date',
+        'credit_every_days',
+        'credit_down_payment',
+        'credit_total',
+        'credit_installment_amount',
     ];
 
     protected $casts = [
         'fecha'      => 'date',
-        'total'      => 'integer',
-        'gravada_10' => 'integer',
-        'iva_10'     => 'integer',
-        'gravada_5'  => 'integer',
-        'iva_5'      => 'integer',
-        'exento'     => 'integer',
-        'total_iva'  => 'integer',
+
+        // ✅ numeric(14,2) => decimal:2
+        'total'      => 'decimal:2',
+        'gravada_10' => 'decimal:2',
+        'iva_10'     => 'decimal:2',
+        'gravada_5'  => 'decimal:2',
+        'iva_5'      => 'decimal:2',
+        'exento'     => 'decimal:2',
+        'total_iva'  => 'decimal:2',
+
+        'credit_down_payment'       => 'decimal:2',
+        'credit_total'              => 'decimal:2',
+        'credit_installment_amount' => 'decimal:2',
+        'credit_first_due_date'     => 'date',
     ];
 
 

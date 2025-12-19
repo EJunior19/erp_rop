@@ -172,6 +172,20 @@ class PurchaseReceiptController extends Controller
 
         return view('purchase_receipts.show', compact('purchase_receipt'));
     }
+    /**
+     * Ticket chico — Impresión rápida de la recepción.
+     */
+    public function ticket(PurchaseReceipt $purchase_receipt)
+    {
+        $purchase_receipt->load([
+            'order.supplier',
+            'items.product',
+            'approvedBy:id,name',
+            'receivedBy:id,name',
+        ]);
+
+        return view('prints.receipts.ticket', compact('purchase_receipt'));
+    }
 
     /**
      * Aprobar recepción (afecta stock).
@@ -187,25 +201,23 @@ class PurchaseReceiptController extends Controller
         DB::transaction(function () use ($purchase_receipt) {
             $purchase_receipt->load(['items.product', 'order']);
 
-            // Afectar stock
+            // Afectar stock SOLO desde el flujo nuevo
             foreach ($purchase_receipt->items as $item) {
                 $item->product->increment('stock', (int) $item->received_qty);
             }
 
-            // Marcar aprobación + auditoría
             $purchase_receipt->update([
                 'status'      => 'aprobado',
                 'approved_by' => auth()->id(),
                 'approved_at' => now(),
             ]);
 
-            // (Opcional) si la OC ya está completamente cubierta, cerrarla o marcar "recibido"
+            // Si querés, más adelante: cerrar OC cuando todo esté recibido.
             // $purchase_receipt->order->update(['status' => 'recibido']);
         });
 
         return back()->with('success','Recepción aprobada y stock actualizado');
     }
-
     /**
      * Rechazar recepción (sin afectar stock).
      */

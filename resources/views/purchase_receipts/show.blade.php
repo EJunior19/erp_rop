@@ -1,3 +1,4 @@
+{{-- resources/views/purchase_receipts/show.blade.php --}}
 @extends('layout.admin')
 
 @section('content')
@@ -9,12 +10,12 @@
       🚚 Recepción #{{ $purchase_receipt->id }}
       <span class="text-sm px-2 py-0.5 rounded font-semibold
         @class([
-          'bg-yellow-900/40 text-yellow-300 border border-yellow-700/50' => $purchase_receipt->status === 'pendiente_aprobacion',
-          'bg-emerald-900/40 text-emerald-300 border border-emerald-700/50' => $purchase_receipt->status === 'aprobado',
-          'bg-red-900/40 text-red-300 border border-red-700/50' => $purchase_receipt->status === 'rechazado',
-          'bg-slate-800 text-slate-300 border border-slate-700/50' => $purchase_receipt->status === 'borrador',
+          'bg-yellow-900/40 text-yellow-300 border border-yellow-700/50'   => $purchase_receipt->status === 'pendiente_aprobacion',
+          'bg-emerald-900/40 text-emerald-300 border border-emerald-700/50'=> $purchase_receipt->status === 'aprobado',
+          'bg-red-900/40 text-red-300 border red-700/50'                   => $purchase_receipt->status === 'rechazado',
+          'bg-slate-800 text-slate-300 border border-slate-700/50'         => $purchase_receipt->status === 'borrador',
         ])">
-        {{ ucfirst($purchase_receipt->status) }}
+        {{ ucfirst(str_replace('_',' ', $purchase_receipt->status)) }}
       </span>
     </h1>
 
@@ -52,13 +53,14 @@
           color="red"
         />
       @elseif($purchase_receipt->status === 'aprobado')
-        {{-- Ir a facturar esta recepción --}}
-        <a href="{{ route('purchase_invoices.create', ['receipt' => $purchase_receipt->id]) }}"
-           class="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-amber-600 hover:bg-amber-700 text-white text-sm">
-          📄 Facturar recepción
+        {{-- 🧾 Imprimir recepción (ticket) --}}
+        <a href="{{ route('purchase_receipts.ticket', $purchase_receipt) }}"
+           target="_blank"
+           class="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-800 hover:bg-gray-700 text-white text-sm">
+          🧾 Imprimir recepción
         </a>
 
-        {{-- Sello de auditoría (opcional) --}}
+        {{-- Sello de auditoría --}}
         <span class="ml-2 text-xs px-2 py-1 rounded border border-emerald-700/50 bg-emerald-900/30 text-emerald-200">
           Aprobado
           @if($purchase_receipt->approved_at)
@@ -90,35 +92,37 @@
   <div class="bg-gray-900 border border-gray-700 rounded-xl p-5 mb-8">
     <div class="grid md:grid-cols-3 gap-4 text-sm">
       <div>
-        <div class="text-gray-400">Orden de compra</div>
+        <div class="text-gray-400 text-xs uppercase">Orden de compra</div>
         <div class="font-semibold">
           {{ $purchase_receipt->order?->order_number ?? '—' }}
         </div>
       </div>
       <div>
-        <div class="text-gray-400">Proveedor</div>
+        <div class="text-gray-400 text-xs uppercase">Proveedor</div>
         <div class="font-semibold">
           {{ $purchase_receipt->order?->supplier?->name ?? '—' }}
         </div>
       </div>
       <div>
-        <div class="text-gray-400">Fecha de recepción</div>
+        <div class="text-gray-400 text-xs uppercase">Fecha de recepción</div>
         <div class="font-semibold">
           {{ \Illuminate\Support\Carbon::parse($purchase_receipt->received_date)->format('d/m/Y') }}
         </div>
       </div>
       <div>
-        <div class="text-gray-400">N° de recepción</div>
-        <div class="font-mono">{{ $purchase_receipt->receipt_number }}</div>
+        <div class="text-gray-400 text-xs uppercase">N° de recepción</div>
+        <div class="font-mono">
+          {{ $purchase_receipt->receipt_number }}
+        </div>
       </div>
       <div>
-        <div class="text-gray-400">Recibido por</div>
+        <div class="text-gray-400 text-xs uppercase">Recibido por</div>
         <div class="font-semibold">
           {{ optional($purchase_receipt->receivedBy)->name ?? ('Usuario #'.$purchase_receipt->received_by) }}
         </div>
       </div>
       <div>
-        <div class="text-gray-400">Creación / Actualización</div>
+        <div class="text-gray-400 text-xs uppercase">Creación / Actualización</div>
         <div class="font-semibold">
           {{ $purchase_receipt->created_at?->format('d/m/Y H:i') }} ·
           {{ $purchase_receipt->updated_at?->format('d/m/Y H:i') }}
@@ -147,10 +151,18 @@
           @forelse($purchase_receipt->items as $it)
             <tr class="hover:bg-gray-800/50">
               <td class="p-3">{{ $it->product?->name ?? '—' }}</td>
-              <td class="p-3 text-right">{{ number_format((int) $it->ordered_qty) }}</td>
-              <td class="p-3 text-right">{{ number_format((int) $it->received_qty) }}</td>
-              <td class="p-3 text-right">₲ {{ number_format((float) $it->unit_cost, 0, ',', '.') }}</td>
-              <td class="p-3 text-right">₲ {{ number_format((float) $it->subtotal, 0, ',', '.') }}</td>
+              <td class="p-3 text-right">
+                {{ number_format((int) $it->ordered_qty, 0, ',', '.') }}
+              </td>
+              <td class="p-3 text-right">
+                {{ number_format((int) $it->received_qty, 0, ',', '.') }}
+              </td>
+              <td class="p-3 text-right">
+                ₲ {{ number_format((float) $it->unit_cost, 0, ',', '.') }}
+              </td>
+              <td class="p-3 text-right">
+                ₲ {{ number_format((float) $it->subtotal, 0, ',', '.') }}
+              </td>
               <td class="p-3">
                 <span class="px-2 py-0.5 rounded text-xs font-semibold
                   @class([
@@ -179,9 +191,13 @@
         <tfoot class="bg-gray-800/60 text-gray-100">
           <tr>
             <td class="p-3 font-semibold text-right" colspan="2">Totales</td>
-            <td class="p-3 text-right font-semibold">{{ number_format($totalQty) }}</td>
+            <td class="p-3 text-right font-semibold">
+              {{ number_format($totalQty, 0, ',', '.') }}
+            </td>
             <td class="p-3"></td>
-            <td class="p-3 text-right font-semibold">₲ {{ number_format($totalVal, 0, ',', '.') }}</td>
+            <td class="p-3 text-right font-semibold">
+              ₲ {{ number_format($totalVal, 0, ',', '.') }}
+            </td>
             <td class="p-3"></td>
           </tr>
         </tfoot>
@@ -198,3 +214,4 @@
 
 </div>
 @endsection
+                    

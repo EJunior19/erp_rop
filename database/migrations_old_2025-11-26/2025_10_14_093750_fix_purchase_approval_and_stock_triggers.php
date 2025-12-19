@@ -1,0 +1,253 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Support\Facades\DB;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        DB::beginTransaction();
+        try {
+           
+            // 2) Asegurar índice único correcto (y limpiar duplicado)
+            DB::unprepared(<<<SQL
+                -- índice bueno (si no existe)
+                CREATE UNIQUE INDEX IF NOT EXISTS inv_mov_uniq_purchase_ref
+                ON public.inventory_movements (ref_type, ref_id, product_id)
+                WHERE (ref_type)::text = 'purchase'::text;
+
+                -- índice redundante (drop si existe)
+                DROP INDEX IF EXISTS public.uniq_mov_purchase_only;
+            SQL);
+
+            // 3) Fix función de aprobación (usa OLD.status y hace todo el efecto)
+            DB::unprepared(<<<'SQL'
+                CREATE OR REPLACE FUNCTION public.fn_pr_update_approve_guard()
+                RETURNS trigger
+                LANGUAGE plpgsql
+                AS $$
+                DECLARE
+                  v_total_items int;
+                  v_full_items  int;
+                BEGIN
+                  -- Idempotencia: ya estaba aprobada
+                  IF OLD.status = 'aprobado' THEN
+                    RAISE EXCEPTION 'La recepción ya está aprobada';
+                  END IF;
+
+                  -- Solo se puede aprobar desde pendiente_aprobacion
+                  IF OLD.status <> 'pendiente_aprobacion' THEN
+                    RAISE EXCEPTION 'Solo se puede aprobar desde pendiente_aprobacion (actual: %)', OLD.status;
+                  END IF;
+
+                  -- Auditoría
+                  NEW.approved_by := COALESCE(NEW.approved_by, NEW.received_by);
+                  NEW.approved_at := COALESCE(NEW.approved_at, NOW());
+
+                  -- Movimientos (1 por producto, sin duplicar)
+                  INSERT INTO public.inventory_movements (
+                      product_id, type, reason, user_id,
+                      ref_type, ref_id, qty, note, created_at, updated_at
+                  )
+                  SELECT
+                      pri.product_id,
+                      'in',
+                      'Compra recibida',
+                      COALESCE(NEW.approved_by, NEW.received_by),
+                      'purchase',
+                      NEW.id,
+                      pri.received_qty,
+                      'Receipt #'||NEW.id||' (OC #'||NEW.purchase_order_id||')',
+                      NOW(), NOW()
+                  FROM public.purchase_receipt_items pri
+                  WHERE pri.purchase_receipt_id = NEW.id
+                    AND pri.received_qty > 0
+                  ON CONFLICT ON CONSTRAINT inv_mov_uniq_purchase_ref DO NOTHING;
+
+                  -- Actualizar stock por producto
+                  UPDATE public.products p
+                  SET stock = p.stock + x.qty_sum
+                  FROM (
+                    SELECT pri.product_id, SUM(pri.received_qty)::int AS qty_sum
+                    FROM public.purchase_receipt_items pri
+                    WHERE pri.purchase_receipt_id = NEW.id
+                    GROUP BY pri.product_id
+                  ) x
+                  WHERE p.id = x.product_id;
+
+                  -- Cerrar OC si todos los renglones quedaron completos (solo recepciones aprobadas)
+                  SELECT COUNT(*) INTO v_total_items
+                  FROM public.purchase_order_items poi
+                  WHERE poi.purchase_order_id = NEW.purchase_order_id;
+
+                  SELECT COUNT(*) INTO v_full_items
+                  FROM public.purchase_order_items poi
+                  WHERE poi.purchase_order_id = NEW.purchase_order_id
+                    AND NOT EXISTS (
+                      SELECT 1
+                      FROM public.purchase_receipts r
+                      JOIN public.purchase_receipt_items ri ON ri.purchase_receipt_id = r.id
+                      WHERE r.purchase_order_id = NEW.purchase_order_id
+                        AND r.status = 'aprobado'
+                        AND ri.product_id = poi.product_id
+                      GROUP BY ri.product_id
+                      HAVING SUM(ri.received_qty) < poi.quantity
+                    );
+
+                  IF v_total_items > 0 AND v_full_items = v_total_items THEN
+                    UPDATE public.purchase_orders
+                    SET status = 'recibido', updated_at = NOW()
+                    WHERE id = NEW.purchase_order_id
+                      AND status IN ('borrador','enviado');
+                  END IF;
+
+                  RETURN NEW;
+                END;
+                $$;
+            SQL);
+
+            // 4) Re-crear trigger con WHEN correcto
+            DB::unprepared(<<<SQL
+                DROP TRIGGER IF EXISTS trg_pr_update_approve_guard ON public.purchase_receipts;
+
+                CREATE TRIGGER trg_pr_update_approve_guard
+                BEFORE UPDATE OF status ON public.purchase_receipts
+                FOR EACH ROW
+                WHEN (OLD.status IS DISTINCT FROM NEW.status AND NEW.status::text = 'aprobado'::text)
+                EXECUTE FUNCTION public.fn_pr_update_approve_guard();
+            SQL);
+
+            // (opcional) tu trigger de bloquear des-aprobación queda como estaba
+            // Si querés, acá podrías re-crearlo también.
+
+            // 5) Backfill de aprobadas históricas (auditoría)
+            DB::unprepared(<<<SQL
+                UPDATE public.purchase_receipts
+                SET approved_by = COALESCE(approved_by, received_by),
+                    approved_at = COALESCE(approved_at, NOW())
+                WHERE status = 'aprobado'
+                  AND (approved_by IS NULL OR approved_at IS NULL);
+            SQL);
+
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    public function down(): void
+    {
+        DB::beginTransaction();
+        try {
+            // 1) Restaurar función original que tenías (la que chequeaba NEW.status)
+            DB::unprepared(<<<'SQL'
+                CREATE OR REPLACE FUNCTION public.fn_pr_update_approve_guard()
+                RETURNS trigger
+                LANGUAGE plpgsql
+                AS $function$
+                    DECLARE
+                      v_total_items int;
+                      v_full_items  int;
+                    BEGIN
+                      -- (VERSIÓN ANTERIOR) Chequeaba NEW.status y levantaba error
+                      IF NEW.status = 'aprobado' THEN
+                        RAISE EXCEPTION 'La recepción ya está aprobada';
+                      END IF;
+
+                      NEW.status      := 'aprobado';
+                      NEW.approved_by := COALESCE(NEW.approved_by, NEW.received_by);
+                      NEW.approved_at := COALESCE(NEW.approved_at, NOW());
+
+                      INSERT INTO inventory_movements (
+                          product_id, type, reason, user_id,
+                          ref_type, ref_id, qty, note, created_at, updated_at
+                      )
+                      SELECT
+                          pri.product_id,
+                          'entrada',
+                          'Compra recibida',
+                          COALESCE(NEW.approved_by, NEW.received_by),
+                          'purchase',
+                          NEW.id,
+                          pri.received_qty,
+                          'Receipt #'||NEW.id||' (OC #'||NEW.purchase_order_id||')',
+                          NOW(), NOW()
+                      FROM purchase_receipt_items pri
+                      WHERE pri.purchase_receipt_id = NEW.id
+                        AND pri.received_qty > 0
+                      ON CONFLICT (ref_type, ref_id, product_id) DO NOTHING;
+
+                      UPDATE products p
+                      SET stock = p.stock + x.qty_sum
+                      FROM (
+                        SELECT pri.product_id, SUM(pri.received_qty) AS qty_sum
+                        FROM purchase_receipt_items pri
+                        WHERE pri.purchase_receipt_id = NEW.id
+                        GROUP BY pri.product_id
+                      ) AS x
+                      WHERE p.id = x.product_id;
+
+                      SELECT COUNT(*) INTO v_total_items
+                      FROM purchase_order_items poi
+                      WHERE poi.purchase_order_id = NEW.purchase_order_id;
+
+                      SELECT COUNT(*) INTO v_full_items
+                      FROM purchase_order_items poi
+                      WHERE poi.purchase_order_id = NEW.purchase_order_id
+                        AND NOT EXISTS (
+                          SELECT 1
+                          FROM purchase_receipts r
+                          JOIN purchase_receipt_items ri ON ri.purchase_receipt_id = r.id
+                          WHERE r.purchase_order_id = NEW.purchase_order_id
+                            AND ri.product_id = poi.product_id
+                          GROUP BY ri.product_id
+                          HAVING SUM(ri.received_qty) < poi.quantity
+                        );
+
+                      IF v_total_items > 0 AND v_full_items = v_total_items THEN
+                        UPDATE purchase_orders
+                        SET status = 'recibido', updated_at = NOW()
+                        WHERE id = NEW.purchase_order_id
+                          AND status IN ('borrador','enviado');
+                      END IF;
+
+                      RETURN NEW;
+                    END;
+                    $function$;
+            SQL);
+
+            // 2) Restaurar trigger anterior (tu versión original)
+            DB::unprepared(<<<SQL
+                DROP TRIGGER IF EXISTS trg_pr_update_approve_guard ON public.purchase_receipts;
+
+                CREATE TRIGGER trg_pr_update_approve_guard
+                BEFORE UPDATE OF status ON public.purchase_receipts
+                FOR EACH ROW
+                WHEN (NEW.status::text = 'aprobado'::text)
+                EXECUTE FUNCTION public.fn_pr_update_approve_guard();
+            SQL);
+
+            // 3) Volver a 'entrada' (solo si querés revertir del todo)
+            DB::unprepared(<<<SQL
+                UPDATE public.inventory_movements
+                SET type = 'entrada'
+                WHERE type = 'in'
+                  AND ref_type = 'purchase';
+            SQL);
+
+            // 4) Re-crear índice duplicado (si querés volver al estado exacto original)
+            DB::unprepared(<<<SQL
+                CREATE UNIQUE INDEX IF NOT EXISTS uniq_mov_purchase_only
+                ON public.inventory_movements (ref_id, product_id)
+                WHERE (ref_type)::text = 'purchase'::text;
+            SQL);
+
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+};

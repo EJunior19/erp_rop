@@ -123,6 +123,8 @@ return [
         // sin 'store' cuando driver = file
     ],
 
+    'catalogo_public_url' => env('CATALOGO_PUBLIC_URL', 'http://127.0.0.1:8001/'),
+
 
    'providers' => [
 

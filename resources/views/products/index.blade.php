@@ -30,6 +30,14 @@
       </thead>
       <tbody class="divide-y divide-gray-700">
         @forelse($products as $p)
+          @php
+            $stock = (int) ($p->stock ?? 0);
+            $stockColor =
+                $stock <= 0 ? 'bg-red-600 text-red-50' :
+                ($stock <= 5 ? 'bg-amber-400 text-amber-950' :
+                'bg-emerald-500 text-emerald-950');
+          @endphp
+
           <tr class="hover:bg-gray-800/60 transition">
             <td class="px-4 py-3 font-medium">{{ $p->id }}</td>
             <td class="px-4 py-3 font-mono">{{ $p->code ?? '—' }}</td>
@@ -37,6 +45,8 @@
             <td class="px-4 py-3">{{ $p->brand->name ?? '—' }}</td>
             <td class="px-4 py-3">{{ $p->category->name ?? '—' }}</td>
             <td class="px-4 py-3">{{ $p->supplier->name ?? '—' }}</td>
+
+            {{-- Precio contado --}}
             <td class="px-4 py-3 text-right">
               @if(!is_null($p->price_cash))
                 @money($p->price_cash)
@@ -44,10 +54,21 @@
                 —
               @endif
             </td>
+
+            {{-- 🔹 Stock: número + texto, alineado a la derecha --}}
             <td class="px-4 py-3 text-right">
-              <x-table-row-status :active="$p->stock > 0" :label="$p->stock" />
+              <span class="inline-flex items-center justify-end gap-2">
+                <span class="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold {{ $stockColor }}">
+                  {{ $stock }}
+                </span>
+                <span class="text-xs text-gray-300">
+                  {{ $stock === 1 ? 'unidad' : '' }}
+                </span>
+              </span>
             </td>
-            <td class="px-4 py-3">
+
+            {{-- Acciones --}}
+            <td class="px-4 py-3 text-right">
               <x-action-buttons 
                 :show="route('products.show',$p)"
                 :edit="route('products.edit',$p)"
@@ -57,7 +78,9 @@
           </tr>
         @empty
           <tr>
-            <td colspan="9" class="px-6 py-8 text-center text-gray-400 italic">Sin productos</td>
+            <td colspan="9" class="px-6 py-8 text-center text-gray-400 italic">
+              Sin productos
+            </td>
           </tr>
         @endforelse
       </tbody>

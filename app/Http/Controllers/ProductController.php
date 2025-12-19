@@ -6,10 +6,10 @@ use App\Models\Product;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Supplier;
-use App\Models\ProductImage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule; // ✅ FALTABA
 
 class ProductController extends Controller
 {
@@ -23,9 +23,7 @@ class ProductController extends Controller
      */
     private function cleanInt($v): ?int
     {
-        if ($v === null || $v === '') {
-            return null;
-        }
+        if ($v === null || $v === '') return null;
         return (int) preg_replace('/\D+/', '', (string) $v);
     }
 
@@ -44,7 +42,7 @@ class ProductController extends Controller
 
     public function create()
     {
-        // Preview del próximo code sin consumir la secuencia (solo PG)
+        // Preview del próximo code (solo sugerencia visual)
         $nextId = null;
         $code   = null;
 
@@ -57,7 +55,7 @@ class ProductController extends Controller
             $nextId = $row?->next_id;
             $code   = $nextId ? sprintf('PRD-%05d', $nextId) : null;
         } catch (\Throwable $e) {
-            // Para MySQL/SQLite, omitimos preview silenciosamente
+            // omit
         }
 
         $brands     = Brand::orderBy('name')->get();
@@ -77,7 +75,6 @@ class ProductController extends Controller
         $installmentPrices    = array_map(fn($v) => $this->cleanInt($v), $rawInstallmentPrices);
         $installments         = (array) $request->input('installments', []);
 
-        // Merge para validar sobre enteros
         $request->merge([
             'price_cash'         => $priceCash,
             'installment_prices' => $installmentPrices,
@@ -86,13 +83,21 @@ class ProductController extends Controller
 
         // 2) Validación
         $validated = $request->validate([
-            'name'                 => ['required','string','max:255'],
-            'brand_id'             => ['required','exists:brands,id'],
-            'category_id'          => ['required','exists:categories,id'],
-            'supplier_id'          => ['required','exists:suppliers,id'],
-            'price_cash'           => ['nullable','integer','min:0'],
-            'active'               => ['required','boolean'],
-            'notes'                => ['nullable','string'],
+            'name'        => ['required','string','max:255'],
+
+            // ✅ CÓDIGO MANUAL (opcional) + único
+            'code'        => ['nullable','string','max:255','unique:products,code'],
+
+            'brand_id'    => ['required','exists:brands,id'],
+            'category_id' => ['required','exists:categories,id'],
+            'supplier_id' => ['required','exists:suppliers,id'],
+
+            'price_cash'  => ['nullable','integer','min:0'],
+
+            // ⚠️ Si usás checkbox, a veces no llega en request -> mejor nullable con default true
+            'active'      => ['nullable','boolean'],
+
+            'notes'       => ['nullable','string'],
 
             'installments'         => ['array'],
             'installments.*'       => ['nullable','integer','min:1'],
@@ -100,30 +105,33 @@ class ProductController extends Controller
             'installment_prices.*' => ['nullable','integer','min:0'],
 
             // 📷 imágenes (múltiples)
-            'images'               => ['sometimes','array'],
-            'images.*'             => ['nullable','image','max:4096'], // 4MB c/u
+            'images'   => ['sometimes','array'],
+            'images.*' => ['nullable','image','max:4096'],
         ]);
 
-        // 3) Persistencia (producto + cuotas + imágenes)
-        DB::transaction(function () use ($request, $validated, $installments, $installmentPrices) {
+        $product = null;
 
-            // Crear producto
+        // 3) Persistencia
+        DB::transaction(function () use ($request, $validated, $installments, $installmentPrices, &$product) {
+
             $product = Product::create([
+                'code'        => filled($validated['code'] ?? null) ? trim($validated['code']) : null, // ✅ GUARDAR CODE
                 'name'        => $validated['name'],
                 'brand_id'    => $validated['brand_id'],
                 'category_id' => $validated['category_id'],
                 'supplier_id' => $validated['supplier_id'],
-                'price_cash'  => $validated['price_cash'] ?? null, // entero en Gs
+                'price_cash'  => $validated['price_cash'] ?? null,
+                'stock'       => 0, // si querés stock inicial manual, agregalo al form y validate
                 'active'      => (bool)($validated['active'] ?? true),
                 'notes'       => $validated['notes'] ?? null,
             ]);
 
-            // Pares cuota -> precio (ignorando vacíos)
+            // Cuotas
             $rows = [];
             foreach ($installments as $i => $n) {
                 $n = (int) $n;
                 $p = $installmentPrices[$i] ?? null;
-                if ($n && $p) {
+                if ($n && $p !== null && $p > 0) {
                     $rows[] = [
                         'installments'      => $n,
                         'installment_price' => (int) $p,
@@ -134,15 +142,17 @@ class ProductController extends Controller
                 $product->installments()->createMany($rows);
             }
 
-            // 📷 Imágenes múltiples (primera = portada)
+            // Imágenes (primera = portada)
             if ($request->hasFile('images')) {
                 foreach ($request->file('images') as $idx => $img) {
                     if (!$img) continue;
-                    $path = $img->store('products', 'public'); // storage/app/public/products
+
+                    $path = $img->store('products', 'public');
+
                     $product->images()->create([
                         'path'       => $path,
                         'alt'        => $product->name,
-                        'is_cover'   => $idx === 0,   // primera como portada
+                        'is_cover'   => $idx === 0,
                         'sort_order' => $idx,
                     ]);
                 }
@@ -150,22 +160,17 @@ class ProductController extends Controller
         });
 
         return redirect()
-            ->route('products.index')
-            ->with('success', "Producto {$validated['name']} creado correctamente con cuotas e imágenes.");
+            ->route('products.show', $product)
+            ->with('success', "Producto {$product->name} creado correctamente.");
     }
 
     public function show(Product $product)
     {
-        // Cargamos todo lo necesario para la ficha
         $product->load([
             'brand','category','supplier','installments',
             'images' => fn($q) => $q->orderBy('sort_order')->orderBy('id'),
             'coverImage'
         ]);
-
-        // Si mostrás movimientos en la vista, podés cargarlo así:
-        // $movements = $product->inventoryMovements()->latest()->limit(20)->get();
-        // return view('products.show', compact('product','movements'));
 
         return view('products.show', compact('product'));
     }
@@ -187,15 +192,13 @@ class ProductController extends Controller
 
     public function update(Request $request, Product $product)
     {
-        // 1) Normalizar entradas (enteros en Gs)
+        // 1) Normalizar entradas
         $priceCash = $this->cleanInt($request->input('price_cash'));
 
-        // Acepta ambos nombres
         $rawInstallmentPrices = (array) $request->input('installment_prices', $request->input('installment_price', []));
         $installmentPrices    = array_map(fn($v) => $this->cleanInt($v), $rawInstallmentPrices);
         $installments         = (array) $request->input('installments', []);
 
-        // Merge para validar sobre enteros
         $request->merge([
             'price_cash'         => $priceCash,
             'installment_prices' => $installmentPrices,
@@ -204,33 +207,36 @@ class ProductController extends Controller
 
         // 2) Validación
         $validated = $request->validate([
-            'name'                 => ['required','string','max:255'],
-            'brand_id'             => ['required','exists:brands,id'],
-            'category_id'          => ['required','exists:categories,id'],
-            'supplier_id'          => ['required','exists:suppliers,id'],
-            'price_cash'           => ['nullable','integer','min:0'],
-            'active'               => ['required','boolean'],
-            'notes'                => ['nullable','string'],
+            'name' => ['required','string','max:255'],
+
+            // ✅ CODE MANUAL + UNIQUE IGNORANDO EL MISMO PRODUCTO
+            'code' => ['nullable','string','max:255', Rule::unique('products','code')->ignore($product->id)],
+
+            'brand_id'    => ['required','exists:brands,id'],
+            'category_id' => ['required','exists:categories,id'],
+            'supplier_id' => ['required','exists:suppliers,id'],
+
+            'price_cash'  => ['nullable','integer','min:0'],
+            'active'      => ['nullable','boolean'],
+            'notes'       => ['nullable','string'],
 
             'installments'         => ['array'],
             'installments.*'       => ['nullable','integer','min:1'],
             'installment_prices'   => ['array'],
             'installment_prices.*' => ['nullable','integer','min:0'],
 
-            // 📷 nuevos archivos opcionales
-            'images'               => ['sometimes','array'],
-            'images.*'             => ['nullable','image','max:4096'],
+            'images'   => ['sometimes','array'],
+            'images.*' => ['nullable','image','max:4096'],
 
-            // portada + orden enviados desde el form
-            'cover_id'             => ['nullable','integer'],
-            'orders'               => ['sometimes','array'],
+            'cover_id' => ['nullable','integer'],
+            'orders'   => ['sometimes','array'],
         ]);
 
-        // 3) Persistencia
         DB::transaction(function () use ($request, $product, $validated, $installments, $installmentPrices) {
 
-            // Actualizar cabecera
+            // ✅ Actualizar cabecera (incluye code)
             $product->update([
+                'code'        => filled($validated['code'] ?? null) ? trim($validated['code']) : null,
                 'name'        => $validated['name'],
                 'brand_id'    => $validated['brand_id'],
                 'category_id' => $validated['category_id'],
@@ -242,11 +248,12 @@ class ProductController extends Controller
 
             // Reemplazar cuotas
             $product->installments()->delete();
+
             $rows = [];
             foreach ($installments as $i => $n) {
                 $n = (int) $n;
                 $p = $installmentPrices[$i] ?? null;
-                if ($n && $p) {
+                if ($n && $p !== null && $p > 0) {
                     $rows[] = [
                         'installments'      => $n,
                         'installment_price' => (int) $p,
@@ -257,12 +264,14 @@ class ProductController extends Controller
                 $product->installments()->createMany($rows);
             }
 
-            // 📷 Subir imágenes nuevas (se agregan al final)
+            // Subir imágenes nuevas
             if ($request->hasFile('images')) {
                 $maxSort = (int) ($product->images()->max('sort_order') ?? 0);
                 foreach ($request->file('images') as $idx => $img) {
                     if (!$img) continue;
+
                     $path = $img->store('products', 'public');
+
                     $product->images()->create([
                         'path'       => $path,
                         'alt'        => $product->name,
@@ -272,26 +281,21 @@ class ProductController extends Controller
                 }
             }
 
-            // 🏷️ Actualizar portada si vino cover_id
+            // Portada
             if ($request->filled('cover_id')) {
                 $coverId = (int) $request->input('cover_id');
-                // Marcar todas como no-portada
                 $product->images()->update(['is_cover' => false]);
-                // Marcar la elegida (si pertenece al producto)
+
                 $img = $product->images()->whereKey($coverId)->first();
-                if ($img) {
-                    $img->update(['is_cover' => true]);
-                }
+                if ($img) $img->update(['is_cover' => true]);
             }
 
-            // 🔢 Actualizar sort_order si vino orders[image_id] => orden
+            // Orden
             $orders = (array) $request->input('orders', []);
             if (!empty($orders)) {
                 foreach ($orders as $imgId => $order) {
                     $img = $product->images()->whereKey($imgId)->first();
-                    if ($img) {
-                        $img->update(['sort_order' => (int) $order]);
-                    }
+                    if ($img) $img->update(['sort_order' => (int) $order]);
                 }
             }
         });
@@ -304,14 +308,13 @@ class ProductController extends Controller
     public function destroy(Product $product)
     {
         DB::transaction(function () use ($product) {
-            // eliminar físicamente archivos de imágenes
             foreach ($product->images as $img) {
                 if ($img->path && Storage::disk('public')->exists($img->path)) {
                     Storage::disk('public')->delete($img->path);
                 }
             }
-            $product->images()->delete();
 
+            $product->images()->delete();
             $product->installments()->delete();
             $product->delete();
         });
@@ -325,15 +328,12 @@ class ProductController extends Controller
      * API
      * ======================= */
 
-    /** Autocomplete / búsqueda libre (nombre, code, id). */
     public function search(Request $request)
     {
         $q = trim((string) $request->query('q', ''));
-        if ($q === '') {
-            return response()->json([]);
-        }
+        if ($q === '') return response()->json([]);
 
-        $driver = DB::connection()->getDriverName(); // mysql, pgsql, sqlite...
+        $driver = DB::connection()->getDriverName();
         $like   = $driver === 'pgsql' ? 'ILIKE' : 'LIKE';
         $needle = "%{$q}%";
 
@@ -343,28 +343,20 @@ class ProductController extends Controller
                 $w->where('name', $like, $needle)
                   ->orWhere('code', $like, $needle);
 
-                if (ctype_digit($q)) {
-                    $w->orWhere('id', (int)$q);
-                }
+                if (ctype_digit($q)) $w->orWhere('id', (int)$q);
             })
             ->orderBy('name')
             ->limit(10)
-            ->get([
-                'id','code','name','stock','price_cash',
-                'brand_id','category_id','supplier_id'
-            ]);
+            ->get(['id','code','name','stock','price_cash','brand_id','category_id','supplier_id']);
 
         return response()->json($rows);
     }
 
-    /** Buscar por ID numérico. */
     public function findById(int $id)
     {
         $prod = Product::where('active', true)->find($id);
 
-        if (!$prod) {
-            return response()->json(['error' => 'Producto no encontrado'], 404);
-        }
+        if (!$prod) return response()->json(['error' => 'Producto no encontrado'], 404);
 
         return response()->json([
             'id'           => $prod->id,
@@ -376,7 +368,6 @@ class ProductController extends Controller
         ]);
     }
 
-    /** Buscar por code (o ID numérico). Devuelve price_cash + cuotas. */
     public function findByCode($code)
     {
         $q = Product::query()->where('active', true);
@@ -393,9 +384,7 @@ class ProductController extends Controller
             }
         }
 
-        if (!$prod) {
-            return response()->json(['error' => 'Producto no encontrado'], 404);
-        }
+        if (!$prod) return response()->json(['error' => 'Producto no encontrado'], 404);
 
         return response()->json([
             'id'           => $prod->id,

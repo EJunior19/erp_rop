@@ -1,0 +1,57 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration {
+    public function up(): void
+    {
+        Schema::table('clients', function (Blueprint $table) {
+            $table->unsignedBigInteger('telegram_chat_id')->nullable()->unique()->after('telefono');
+            $table->string('telegram_link_token', 64)->nullable()->unique()->after('telegram_chat_id');
+            $table->timestamp('telegram_linked_at')->nullable()->after('telegram_link_token');
+        });
+    }
+
+  public function down(): void
+{
+    // 💡 En Postgres, unique puede quedar como constraint o como índice con nombre distinto.
+    // Usamos IF EXISTS para evitar que falle si el nombre no coincide.
+
+    // Soltar UNIQUEs (si existen) en Postgres
+    try {
+        \Illuminate\Support\Facades\DB::statement('ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_telegram_chat_id_unique');
+        \Illuminate\Support\Facades\DB::statement('ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_telegram_link_token_unique');
+    } catch (\Throwable $e) {
+        // Ignorar si no aplica (por si fuera otro motor o ya no existen)
+    }
+
+    // Como alternativa (por si fueron índices y no constraints):
+    try {
+        \Illuminate\Support\Facades\DB::statement('DROP INDEX IF EXISTS clients_telegram_chat_id_unique');
+        \Illuminate\Support\Facades\DB::statement('DROP INDEX IF EXISTS clients_telegram_link_token_unique');
+    } catch (\Throwable $e) {
+        // Ignorar
+    }
+
+    // Finalmente, soltar columnas si existen
+    if (\Illuminate\Support\Facades\Schema::hasColumn('clients', 'telegram_linked_at')) {
+        \Illuminate\Support\Facades\Schema::table('clients', function (\Illuminate\Database\Schema\Blueprint $table) {
+            $table->dropColumn('telegram_linked_at');
+        });
+    }
+
+    if (\Illuminate\Support\Facades\Schema::hasColumn('clients', 'telegram_link_token')) {
+        \Illuminate\Support\Facades\Schema::table('clients', function (\Illuminate\Database\Schema\Blueprint $table) {
+            $table->dropColumn('telegram_link_token');
+        });
+    }
+
+    if (\Illuminate\Support\Facades\Schema::hasColumn('clients', 'telegram_chat_id')) {
+        \Illuminate\Support\Facades\Schema::table('clients', function (\Illuminate\Database\Schema\Blueprint $table) {
+            $table->dropColumn('telegram_chat_id');
+        });
+    }
+}
+};

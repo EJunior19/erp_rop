@@ -7,15 +7,26 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     public function up(): void
-    {
-        // 1) Auditoría: columna updated_by (si no existe)
-        if (!Schema::hasColumn('purchases', 'updated_by')) {
-            DB::statement("ALTER TABLE purchases ADD COLUMN updated_by INTEGER NULL;");
-        }
+{
+    // 0) Asegurar que inventory_movements tenga columnas ref_type y ref_id
+    DB::statement("
+        ALTER TABLE inventory_movements
+        ADD COLUMN IF NOT EXISTS ref_type varchar(20);
+    ");
 
-        // 2) Índice único PARCIAL: evita duplicados de movimientos SOLO para compras
-        //    (no afecta ref_type='sale', 'adjust', etc.)
-        DB::statement(<<<'SQL'
+    DB::statement("
+        ALTER TABLE inventory_movements
+        ADD COLUMN IF NOT EXISTS ref_id bigint;
+    ");
+
+    // 1) Auditoría: columna updated_by (si no existe)
+    if (!Schema::hasColumn('purchases', 'updated_by')) {
+        DB::statement("ALTER TABLE purchases ADD COLUMN updated_by INTEGER NULL;");
+    }
+
+    // 2) Índice único PARCIAL: evita duplicados de movimientos SOLO para compras
+    //    (no afecta ref_type='sale', 'adjust', etc.)
+    DB::statement(<<<'SQL'
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -31,9 +42,9 @@ BEGIN
 END$$;
 SQL);
 
-        // 3) Función: aprobar => sumar stock + registrar movimientos (idempotente).
-        //    Bloquear “desaprobar” (política ERP).
-        DB::unprepared(<<<'SQL'
+    // 3) Función: aprobar => sumar stock + registrar movimientos (idempotente).
+    //    Bloquear “desaprobar” (política ERP).
+    DB::unprepared(<<<'SQL'
 CREATE OR REPLACE FUNCTION public.fn_purchases_au_estado_recalc()
 RETURNS trigger AS $$
 BEGIN
@@ -74,8 +85,8 @@ END
 $$ LANGUAGE plpgsql;
 SQL);
 
-        // 4) Trigger AFTER UPDATE OF estado
-        DB::unprepared(<<<'SQL'
+    // 4) Trigger AFTER UPDATE OF estado
+    DB::unprepared(<<<'SQL'
 DROP TRIGGER IF EXISTS trg_purchases_au_estado ON purchases;
 CREATE TRIGGER trg_purchases_au_estado
 AFTER UPDATE OF estado ON purchases
@@ -83,8 +94,8 @@ FOR EACH ROW
 EXECUTE FUNCTION public.fn_purchases_au_estado_recalc();
 SQL);
 
-        // 5) Función: bloquear borrado de compras aprobadas
-        DB::unprepared(<<<'SQL'
+    // 5) Función: bloquear borrado de compras aprobadas
+    DB::unprepared(<<<'SQL'
 CREATE OR REPLACE FUNCTION public.fn_purchases_bd_block_approved()
 RETURNS trigger AS $$
 BEGIN
@@ -96,40 +107,14 @@ END
 $$ LANGUAGE plpgsql;
 SQL);
 
-        // 6) Trigger BEFORE DELETE (bloqueo)
-        DB::unprepared(<<<'SQL'
+    // 6) Trigger BEFORE DELETE (bloqueo)
+    DB::unprepared(<<<'SQL'
 DROP TRIGGER IF EXISTS trg_purchases_bd_block ON purchases;
 CREATE TRIGGER trg_purchases_bd_block
 BEFORE DELETE ON purchases
 FOR EACH ROW
 EXECUTE FUNCTION public.fn_purchases_bd_block_approved();
 SQL);
-    }
+}
 
-    public function down(): void
-    {
-        // Quitar triggers
-        DB::unprepared("DROP TRIGGER IF EXISTS trg_purchases_au_estado ON purchases;");
-        DB::unprepared("DROP TRIGGER IF EXISTS trg_purchases_bd_block ON purchases;");
-
-        // Quitar funciones
-        DB::unprepared("DROP FUNCTION IF EXISTS public.fn_purchases_au_estado_recalc();");
-        DB::unprepared("DROP FUNCTION IF EXISTS public.fn_purchases_bd_block_approved();");
-
-        // Quitar índice único parcial
-        DB::statement(<<<'SQL'
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM pg_indexes
-    WHERE schemaname='public' AND indexname='uniq_mov_purchase_only'
-  ) THEN
-    DROP INDEX uniq_mov_purchase_only;
-  END IF;
-END$$;
-SQL);
-
-        // (Opcional) Eliminar columna updated_by
-        // DB::statement("ALTER TABLE purchases DROP COLUMN IF EXISTS updated_by;");
-    }
 };

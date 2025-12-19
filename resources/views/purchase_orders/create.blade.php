@@ -43,6 +43,46 @@
 </div>
 
 <script>
+/* -------------------------------------
+   💰 FORMATEO SIN DECIMALES (Gs)
+-------------------------------------- */
+
+// Formatea: 100000 → 100.000
+function formatMoney(value) {
+    // quitar puntos y comas previos
+    value = value.replace(/\./g, "").replace(/,/g, "");
+
+    if (isNaN(value) || value === "") return "";
+
+    let number = parseInt(value);
+
+    return number.toLocaleString("es-ES");
+}
+
+// Quitar formato antes de enviar
+function unformatMoney(value) {
+    return value.replace(/\./g, "");
+}
+
+// Formatear mientras se escribe
+document.addEventListener("input", function (e) {
+    if (e.target.classList.contains("precio-input")) {
+        let raw = e.target.value;
+        e.target.value = formatMoney(raw);
+    }
+});
+
+// Antes de enviar, remover formato
+document.addEventListener("submit", function () {
+    document.querySelectorAll(".precio-input").forEach(function (input) {
+        input.value = unformatMoney(input.value);
+    });
+});
+
+/* -------------------------------------
+   ➕ AGREGAR FILAS
+-------------------------------------- */
+
 function rowTemplate(idx) {
   return `
   <div class="grid md:grid-cols-3 gap-2 border border-gray-700 rounded p-2">
@@ -54,12 +94,29 @@ function rowTemplate(idx) {
         @endforeach
       </select>
     </div>
-    <div><input type="number" min="1" name="items[${idx}][quantity]" class="w-full bg-gray-800 border border-gray-700 rounded p-2" placeholder="Cantidad" required></div>
-    <div><input type="number" step="0.01" min="0" name="items[${idx}][unit_price]" class="w-full bg-gray-800 border border-gray-700 rounded p-2" placeholder="Precio"></div>
+
+    <div>
+      <input type="number" min="1" 
+             name="items[${idx}][quantity]" 
+             class="w-full bg-gray-800 border border-gray-700 rounded p-2" 
+             placeholder="Cantidad" required>
+    </div>
+
+    <div>
+      <input type="text" 
+             name="items[${idx}][unit_price]" 
+             class="precio-input w-full bg-gray-800 border border-gray-700 rounded p-2" 
+             placeholder="Precio">
+    </div>
   </div>`;
 }
+
 let idx = 0;
-function addRow(){ document.getElementById('items').insertAdjacentHTML('beforeend', rowTemplate(idx++)); }
+function addRow() {
+    document.getElementById('items')
+        .insertAdjacentHTML('beforeend', rowTemplate(idx++));
+}
 addRow();
 </script>
+
 @endsection

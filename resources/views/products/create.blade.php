@@ -26,6 +26,13 @@
            class="w-full px-3 py-2 rounded bg-gray-800 border border-gray-700 focus:ring focus:ring-blue-500" required>
   </div>
 
+  {{-- Código --}}
+  <div>
+    <label class="block mb-1 font-medium">Código / SKU</label>
+    <input type="text" name="code" value="{{ old('code', $product->code ?? '') }}"
+           class="w-full px-3 py-2 rounded bg-gray-800 border border-gray-700 focus:ring focus:ring-blue-500" required>
+  </div>
+
   {{-- 🔹 Marca --}}
   <div>
     <label class="block mb-1 font-medium">Marca</label>

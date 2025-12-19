@@ -33,20 +33,57 @@
     </div>
 
     <div class="md:col-span-2">
-    <label class="block text-sm font-semibold text-green-300 mb-1">Notas (opcional)</label>
-    <textarea name="notes" rows="3"
+      <label class="block text-sm font-semibold text-green-300 mb-1">Notas (opcional)</label>
+      <textarea name="notes" rows="3"
         class="w-full rounded-lg border-gray-700 bg-gray-800 text-gray-100 px-3 py-2">{{ old('notes') }}</textarea>
     </div>
-
 
     <button class="px-4 py-2 bg-green-600 rounded">Guardar</button>
   </form>
 </div>
 
 <script>
+/* -------------------------------------
+   💰 FORMATEO SIN DECIMALES (Gs)
+-------------------------------------- */
+
+// Convierte 100000 → 100.000
+function formatMoney(value) {
+    value = value.replace(/\./g, "").replace(/,/g, "");
+
+    if (isNaN(value) || value === "") return "";
+
+    let number = parseInt(value);
+    return number.toLocaleString("es-ES");
+}
+
+// Devuelve solo número limpio → 100000
+function unformatMoney(value) {
+    return value.replace(/\./g, "");
+}
+
+// Formatea mientras el usuario escribe
+document.addEventListener("input", function (e) {
+    if (e.target.classList.contains("precio-input")) {
+        let raw = e.target.value;
+        e.target.value = formatMoney(raw);
+    }
+});
+
+// Quita formato antes de enviar
+document.addEventListener("submit", function () {
+    document.querySelectorAll(".precio-input").forEach(function (input) {
+        input.value = unformatMoney(input.value);
+    });
+});
+
+/* -------------------------------------
+   ➕ GENERAR FILAS
+-------------------------------------- */
 function rowTemplate(idx) {
   return `
   <div class="grid md:grid-cols-4 gap-2 border border-gray-700 rounded p-2">
+
     <div>
       <select name="items[${idx}][product_id]" class="w-full bg-gray-800 border border-gray-700 rounded p-2" required>
         <option value="">Producto…</option>
@@ -55,12 +92,36 @@ function rowTemplate(idx) {
         @endforeach
       </select>
     </div>
-    <div><input type="number" min="0" name="items[${idx}][ordered_qty]" class="w-full bg-gray-800 border border-gray-700 rounded p-2" placeholder="Pedida"></div>
-    <div><input type="number" min="0" name="items[${idx}][received_qty]" class="w-full bg-gray-800 border border-gray-700 rounded p-2" placeholder="Recibida"></div>
-    <div><input type="number" step="0.01" min="0" name="items[${idx}][unit_cost]" class="w-full bg-gray-800 border border-gray-700 rounded p-2" placeholder="Costo"></div>
+
+    <div>
+      <input type="number" min="0" 
+             name="items[${idx}][ordered_qty]" 
+             class="w-full bg-gray-800 border border-gray-700 rounded p-2"
+             placeholder="Pedida">
+    </div>
+
+    <div>
+      <input type="number" min="0" 
+             name="items[${idx}][received_qty]" 
+             class="w-full bg-gray-800 border border-gray-700 rounded p-2"
+             placeholder="Recibida">
+    </div>
+
+    <div>
+      <input type="text" 
+             name="items[${idx}][unit_cost]" 
+             class="precio-input w-full bg-gray-800 border border-gray-700 rounded p-2"
+             placeholder="Costo">
+    </div>
+
   </div>`;
 }
-let idx = 0; function addRow(){ document.getElementById('items').insertAdjacentHTML('beforeend', rowTemplate(idx++)); }
+
+let idx = 0;
+function addRow() {
+    document.getElementById('items').insertAdjacentHTML('beforeend', rowTemplate(idx++));
+}
 addRow();
 </script>
+
 @endsection

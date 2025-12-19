@@ -165,10 +165,22 @@
         :delete="route('products.destroy', $product)"
         :name="'el producto '.$product->name" />
 
-      <a href="{{ route('products.index') }}"
-         class="px-6 py-2 text-sm rounded-lg border border-gray-500 text-gray-300 hover:bg-gray-600 font-semibold shadow">
-        ← Volver
+      @php
+          // Por defecto, volver al index de productos
+          $backUrl = route('products.index');
+
+          // Si vino desde catálogo, reconstruimos la URL al catálogo con los mismos filtros
+          if (request('from') === 'catalog') {
+              $params = array_filter(request()->only('q','category_id','brand_id','page'));
+              $backUrl = route('catalog.index', $params);
+          }
+      @endphp
+
+      <a href="{{ $backUrl }}"
+        class="px-4 py-2 border border-gray-400 text-gray-300 rounded hover:bg-gray-700 hover:text-white text-sm">
+          ← Volver
       </a>
+
     </div>
 
     {{-- Últimos movimientos del producto --}}

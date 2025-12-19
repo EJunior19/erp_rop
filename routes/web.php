@@ -30,6 +30,8 @@ use App\Http\Controllers\FinancePinController;
 use App\Http\Controllers\ClientDocumentController;
 use App\Http\Controllers\ClientReferenceController;
 use App\Http\Controllers\ContactDashboardController;
+use App\Http\Controllers\CatalogController;
+
 
 // Nuevo módulo de Compras
 use App\Http\Controllers\PurchaseOrderController;
@@ -39,6 +41,9 @@ use App\Http\Controllers\PurchaseInvoiceController;
 
 // **Imágenes de producto**
 use App\Http\Controllers\ProductImageController;
+use App\Http\Controllers\PayablePaymentController;
+use App\Http\Controllers\PayableController; // si todavía no lo creaste, lo vamos a usar
+
 
 use App\Models\Client;
 use App\Models\Invoice;
@@ -90,22 +95,22 @@ Route::middleware('auth')->group(function () {
         Route::post('/finance/lock', [FinancePinController::class, 'lock'])->name('finance.lock');
 
         Route::middleware('finance.pin')->group(function () {
-            Route::get('/finance',       [FinanceController::class, 'index'])->name('finance.index');
-            Route::get('/finance/stats', [FinanceController::class, 'stats'])->name('finance.stats');
+            Route::get('/finance',         [FinanceController::class, 'index'])->name('finance.index');
+            Route::get('/finance/stats',   [FinanceController::class, 'stats'])->name('finance.stats');
             Route::get('/dashboard/stats', [DashboardController::class, 'stats'])->name('dashboard.stats');
         });
     });
 
-    // Recibo de pago
+    // Recibo de pago de créditos de clientes
     Route::get('/payments/{payment}/receipt', [PaymentController::class, 'receipt'])->name('payments.receipt');
 
     // Admin bot Telegram
     Route::prefix('bot')->group(function () {
         Route::get('/', [BotAdminController::class, 'index'])->name('bot.index');
-        Route::post('/webhook/set', [BotAdminController::class, 'setWebhook'])->name('bot.webhook.set');
+        Route::post('/webhook/set',  [BotAdminController::class, 'setWebhook'])->name('bot.webhook.set');
         Route::post('/webhook/test', [BotAdminController::class, 'testWebhook'])->name('bot.webhook.test');
         Route::post('/broadcast/test', [BotAdminController::class, 'broadcastTest'])->name('bot.broadcast.test');
-        Route::post('/clients/{client}/ping', [BotAdminController::class, 'pingClient'])->name('bot.client.ping');
+        Route::post('/clients/{client}/ping',            [BotAdminController::class, 'pingClient'])->name('bot.client.ping');
         Route::post('/clients/{client}/regenerate-link', [BotAdminController::class, 'regenerateLink'])->name('bot.client.regen');
     });
 
@@ -120,34 +125,35 @@ Route::middleware('auth')->group(function () {
 
     // Dashboard de Créditos
     Route::prefix('dashboard/creditos')->name('credits.')->group(function () {
-        Route::get('/',             [CreditDashboardController::class, 'index'])->name('dashboard');
-        Route::get('/logs',         [CreditDashboardController::class, 'logs'])->name('logs');
-        Route::get('/estadisticas', [CreditDashboardController::class, 'stats'])->name('stats');
-        Route::post('/{credit}/recordatorio', [CreditDashboardController::class, 'remind'])->name('remind');
+        Route::get('/',                      [CreditDashboardController::class, 'index'])->name('dashboard');
+        Route::get('/logs',                  [CreditDashboardController::class, 'logs'])->name('logs');
+        Route::get('/estadisticas',          [CreditDashboardController::class, 'stats'])->name('stats');
+        Route::post('/{credit}/recordatorio',[CreditDashboardController::class, 'remind'])->name('remind');
     });
 
     // Dashboard de Contactos
     Route::prefix('dashboard/contactos')->name('contact.')->group(function () {
-        Route::get('/',                [ContactDashboardController::class, 'index'])->name('index');
-        Route::post('/send/{client}',  [ContactDashboardController::class, 'send'])->name('send');
-        Route::post('/broadcast',      [ContactDashboardController::class, 'broadcast'])->name('broadcast'); // opcional
-        Route::get('/logs',            [ContactDashboardController::class, 'logs'])->name('logs');           // json para tabla
+        Route::get('/',               [ContactDashboardController::class, 'index'])->name('index');
+        Route::post('/send/{client}', [ContactDashboardController::class, 'send'])->name('send');
+        Route::post('/broadcast',     [ContactDashboardController::class, 'broadcast'])->name('broadcast');
+        Route::get('/logs',           [ContactDashboardController::class, 'logs'])->name('logs');
     });
 
-    // Pagos (desde dashboard)
+    // Pagos de créditos de clientes (desde dashboard)
     Route::post('/payments', [PaymentController::class, 'store'])->name('payments.store');
 
-    // Créditos
+    // Créditos (clientes)
     Route::resource('credits', CreditController::class)->except(['edit','update']);
     Route::post('credits/{credit}/pay', [CreditController::class, 'pay'])->name('credits.pay');
 
     // Stock check
     Route::post('/stock/check', [StockController::class, 'check'])->name('stock.check');
 
-    // Facturas de compra
-    Route::resource('purchase_invoices', PurchaseInvoiceController::class)->only(['index','create','store','show']);
+    // Facturas de compra (factura del proveedor)
+    Route::resource('purchase_invoices', PurchaseInvoiceController::class)
+        ->only(['index','create','store','show']);
 
-    // Categorías (extras + CRUD)
+    // Categorías
     Route::prefix('categories')->group(function () {
         Route::put('{category}/toggle', [CategoryController::class, 'toggle'])->name('categories.toggle');
         Route::get('deleted',           [CategoryController::class, 'deleted'])->name('categories.deleted');
@@ -166,12 +172,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/clients/{client}/documents', function (Client $client) {
         return redirect()->route('clients.edit', [$client, 'tab' => 'docs']);
     })->name('clients.documents.index');
-    Route::post('/clients/{client}/documents',                 [ClientDocumentController::class, 'store'])->name('clients.documents.store');
-    Route::delete('/clients/{client}/documents/{doc}',         [ClientDocumentController::class, 'destroy'])->name('clients.documents.destroy');
+    Route::post('/clients/{client}/documents',         [ClientDocumentController::class, 'store'])->name('clients.documents.store');
+    Route::delete('/clients/{client}/documents/{doc}', [ClientDocumentController::class, 'destroy'])->name('clients.documents.destroy');
 
     // Referencias de clientes
-    Route::post('/clients/{client}/references',                [ClientReferenceController::class, 'store'])->name('clients.references.store');
-    Route::delete('/clients/{client}/references/{reference}',  [ClientReferenceController::class, 'destroy'])->name('clients.references.destroy');
+    Route::post('/clients/{client}/references',               [ClientReferenceController::class, 'store'])->name('clients.references.store');
+    Route::delete('/clients/{client}/references/{reference}', [ClientReferenceController::class, 'destroy'])->name('clients.references.destroy');
 
     // Ventas + aprobaciones
     Route::post('/sales/{sale}/approve', [SaleApprovalController::class,'approve'])->name('sales.approve');
@@ -188,13 +194,13 @@ Route::middleware('auth')->group(function () {
     Route::resource('brands',    BrandController::class);
     Route::resource('products',  ProductController::class);
 
-    // **Imágenes de producto (subrutas)**
+    // Imágenes de producto
     Route::delete('/products/{product}/images/{image}', [ProductImageController::class, 'destroy'])
-        ->name('products.images.destroy');  // elimina una imagen
+        ->name('products.images.destroy');
     Route::post('/products/{product}/images/{image}/cover', [ProductImageController::class, 'setCover'])
-        ->name('products.images.setCover'); // marca como portada
+        ->name('products.images.setCover');
     Route::post('/products/{product}/images/reorder', [ProductImageController::class, 'reorder'])
-        ->name('products.images.reorder');  // reordenar por sort_order
+        ->name('products.images.reorder');
 
     // Sub-recursos de proveedores
     Route::prefix('suppliers/{supplier}')->name('suppliers.')->group(function () {
@@ -202,13 +208,13 @@ Route::middleware('auth')->group(function () {
         Route::delete('/addresses/{address}',     [SupplierController::class, 'destroyAddress'])->name('addresses.destroy');
         Route::post('/addresses/{address}/primary',[SupplierController::class, 'setPrimaryAddress'])->name('addresses.primary');
 
-        Route::post('/phones',                    [SupplierController::class, 'storePhone'])->name('phones.store');
-        Route::delete('/phones/{phone}',          [SupplierController::class, 'destroyPhone'])->name('phones.destroy');
-        Route::post('/phones/{phone}/primary',    [SupplierController::class, 'setPrimaryPhone'])->name('phones.primary');
+        Route::post('/phones',                 [SupplierController::class, 'storePhone'])->name('phones.store');
+        Route::delete('/phones/{phone}',       [SupplierController::class, 'destroyPhone'])->name('phones.destroy');
+        Route::post('/phones/{phone}/primary', [SupplierController::class, 'setPrimaryPhone'])->name('phones.primary');
 
-        Route::post('/emails',                    [SupplierController::class, 'storeEmail'])->name('emails.store');
-        Route::delete('/emails/{email}',          [SupplierController::class, 'destroyEmail'])->name('emails.destroy');
-        Route::post('/emails/{email}/default',    [SupplierController::class, 'setDefaultEmail'])->name('emails.default');
+        Route::post('/emails',                [SupplierController::class, 'storeEmail'])->name('emails.store');
+        Route::delete('/emails/{email}',      [SupplierController::class, 'destroyEmail'])->name('emails.destroy');
+        Route::post('/emails/{email}/default',[SupplierController::class, 'setDefaultEmail'])->name('emails.default');
     });
 
     // Inventario (movimientos)
@@ -216,20 +222,20 @@ Route::middleware('auth')->group(function () {
 
     // Reportes
     Route::prefix('reports')->name('reports.')->group(function () {
-        Route::get('/sales',        [ReportController::class, 'sales'])->name('sales');
-        Route::get('/purchases',    [ReportController::class, 'purchases'])->name('purchases');
-        Route::get('/credits',      [ReportController::class, 'credits'])->name('credits');
-        Route::get('/inventory',    [ReportController::class, 'inventory'])->name('inventory');
+        Route::get('/sales',     [ReportController::class, 'sales'])->name('sales');
+        Route::get('/purchases', [ReportController::class, 'purchases'])->name('purchases');
+        Route::get('/credits',   [ReportController::class, 'credits'])->name('credits');
+        Route::get('/inventory', [ReportController::class, 'inventory'])->name('inventory');
 
-        Route::get('/sales/pdf',        [ReportController::class, 'salesPdf'])->name('sales.pdf');
-        Route::get('/purchases/pdf',    [ReportController::class, 'purchasesPdf'])->name('purchases.pdf');
-        Route::get('/credits/pdf',      [ReportController::class, 'creditsPdf'])->name('credits.pdf');
-        Route::get('/inventory/pdf',    [ReportController::class, 'inventoryPdf'])->name('inventory.pdf');
+        Route::get('/sales/pdf',     [ReportController::class, 'salesPdf'])->name('sales.pdf');
+        Route::get('/purchases/pdf', [ReportController::class, 'purchasesPdf'])->name('purchases.pdf');
+        Route::get('/credits/pdf',   [ReportController::class, 'creditsPdf'])->name('credits.pdf');
+        Route::get('/inventory/pdf', [ReportController::class, 'inventoryPdf'])->name('inventory.pdf');
 
-        Route::get('/sales/print',      [ReportController::class, 'salesPrint'])->name('sales.print');
-        Route::get('/purchases/print',  [ReportController::class, 'purchasesPrint'])->name('purchases.print');
-        Route::get('/credits/print',    [ReportController::class, 'creditsPrint'])->name('credits.print');
-        Route::get('/inventory/print',  [ReportController::class, 'inventoryPrint'])->name('inventory.print');
+        Route::get('/sales/print',     [ReportController::class, 'salesPrint'])->name('sales.print');
+        Route::get('/purchases/print', [ReportController::class, 'purchasesPrint'])->name('purchases.print');
+        Route::get('/credits/print',   [ReportController::class, 'creditsPrint'])->name('credits.print');
+        Route::get('/inventory/print', [ReportController::class, 'inventoryPrint'])->name('inventory.print');
     });
 
     /**
@@ -265,12 +271,64 @@ Route::middleware('auth')->group(function () {
      * NUEVO MÓDULO DE COMPRAS
      */
     Route::resource('purchase_orders',   PurchaseOrderController::class);
-    Route::resource('purchase_receipts', PurchaseReceiptController::class)->only(['index','create','store','show']);
-    Route::post('purchase_receipts/{receipt}/approve', [PurchaseApprovalController::class,'approve'])->name('purchase_receipts.approve');
-    Route::post('purchase_receipts/{receipt}/reject',  [PurchaseApprovalController::class,'reject'])->name('purchase_receipts.reject');
+
+    Route::resource('purchase_receipts', PurchaseReceiptController::class)
+        ->only(['index','create','store','show']);
+
+    Route::post(
+        'purchase_receipts/{receipt}/approve',
+        [PurchaseApprovalController::class,'approve']
+    )->name('purchase_receipts.approve');
+
+    Route::post(
+        'purchase_receipts/{receipt}/reject',
+        [PurchaseApprovalController::class,'reject']
+    )->name('purchase_receipts.reject');
+
+    // 🧾 Ticket chico de recepción (impresión interna)
+    Route::get(
+        'purchase_receipts/{purchase_receipt}/ticket',
+        [PurchaseReceiptController::class, 'ticket']
+    )->name('purchase_receipts.ticket');
+
+    /**
+     * CUENTAS POR PAGAR
+     */
+    Route::resource('payables', PayableController::class)
+        ->only(['index','show']);
+
+    Route::post(
+        'payables/{payable}/payments',
+        [PayablePaymentController::class, 'store']
+    )->name('payables.payments.store');
 
     // Acciones de estado OC
-    Route::post('purchase_orders/{purchase_order}/send',   [PurchaseOrderController::class,'send'])->name('purchase_orders.send');
-    Route::post('purchase_orders/{purchase_order}/close',  [PurchaseOrderController::class,'close'])->name('purchase_orders.close');
-    Route::post('purchase_orders/{purchase_order}/reopen', [PurchaseOrderController::class,'reopen'])->name('purchase_orders.reopen');
-});
+    Route::post(
+        'purchase_orders/{purchase_order}/send',
+        [PurchaseOrderController::class,'send']
+    )->name('purchase_orders.send');
+
+    Route::post(
+        'purchase_orders/{purchase_order}/close',
+        [PurchaseOrderController::class,'close']
+    )->name('purchase_orders.close');
+
+        Route::post(
+        'purchase_orders/{purchase_order}/reopen',
+        [PurchaseOrderController::class,'reopen']
+    )->name('purchase_orders.reopen');
+
+ 
+
+// ✅ Catálogo tipo ecommerce (ERP)
+Route::get('/catalogo', [CatalogController::class, 'index'])
+    ->name('catalog.index');
+
+// ✅ Vista Ecommerce (si querés que abra el catálogo real del ERP)
+Route::get('/vista-ecommerce', function () {
+    return view('catalog.iframe');
+})->name('ecommerce.vista');
+
+
+
+}); // 👈 cierre del middleware('auth')

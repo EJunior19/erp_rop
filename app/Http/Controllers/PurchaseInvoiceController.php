@@ -7,7 +7,8 @@ use App\Models\{
     PurchaseInvoiceItem,
     PurchaseReceipt,
     PurchaseReceiptItem,
-    Product
+    Product,
+    Payable
 };
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -33,25 +34,30 @@ class PurchaseInvoiceController extends Controller
 
         if ($receiptId) {
             // Trae la recepción + OC + proveedor + productos + sumatoria ya facturada
+            // 🔒 Solo permitimos recepciones APROBADAS
             $selected = PurchaseReceipt::with([
-                'order.supplier',
-                'items' => function ($q) {
-                    $q->with(['product:id,name,code'])
-                      ->withSum('invoiceItems as invoiced_qty', 'qty')
-                      ->orderBy('id');
-                },
-            ])->findOrFail($receiptId);
+                    'order.supplier',
+                    'items' => function ($q) {
+                        $q->with(['product:id,name,code'])
+                          ->withSum('invoiceItems as invoiced_qty', 'qty')
+                          ->orderBy('id');
+                    },
+                ])
+                ->where('status', 'aprobado')
+                ->findOrFail($receiptId);
 
             // Agrega remaining_qty (recibido - ya facturado)
             $selected->items->transform(function ($it) {
                 $invoiced = (int) ($it->invoiced_qty ?? 0);
-                $it->remaining_qty = max(0, (int)$it->received_qty - $invoiced);
+                $it->remaining_qty = max(0, (int) $it->received_qty - $invoiced);
                 return $it;
             });
         }
 
         // últimas 50 recepciones para el selector
+        // 🔒 Solo recepciones APROBADAS
         $receipts = PurchaseReceipt::with('order.supplier')
+            ->where('status', 'aprobado')
             ->latest('id')
             ->limit(50)
             ->get();
@@ -64,12 +70,17 @@ class PurchaseInvoiceController extends Controller
 
     public function store(Request $request)
     {
-        // Validación base
+        // Validación base + condición de pago
         $data = $request->validate([
             'purchase_receipt_id'                  => ['required','exists:purchase_receipts,id'],
             'invoice_number'                       => ['required','string','max:50'],
             'invoice_date'                         => ['required','date'],
             'notes'                                => ['nullable','string','max:2000'],
+
+            // 👇 CONDICIÓN DE PAGO / ADELANTO
+            'payment_term'                         => ['required','in:contado,credito,zafra,especial'],
+            'due_date'                             => ['nullable','date'],
+            'advance_amount'                       => ['nullable','numeric','min:0'],
 
             'items'                                 => ['required','array','min:1'],
             'items.*.purchase_receipt_item_id'      => ['required','exists:purchase_receipt_items,id'],
@@ -81,32 +92,62 @@ class PurchaseInvoiceController extends Controller
 
         // Traer la recepción y los ítems con sumatoria ya facturada
         $receipt = PurchaseReceipt::with([
-            'order.supplier',
-            'items' => function ($q) {
-                $q->withSum('invoiceItems as invoiced_qty', 'qty');
-            }
-        ])->findOrFail($data['purchase_receipt_id']);
+                'order.supplier',
+                'items' => function ($q) {
+                    $q->withSum('invoiceItems as invoiced_qty', 'qty');
+                }
+            ])
+            ->findOrFail($data['purchase_receipt_id']);
 
-        // Construir mapa de "remaining" por ítem de recepción
+        // 🔒 Reglas: solo se puede facturar una recepción APROBADA
+        if ($receipt->status !== 'aprobado') {
+            return back()
+                ->withInput()
+                ->withErrors([
+                    'purchase_receipt_id' => 'Solo se pueden facturar recepciones aprobadas.',
+                ]);
+        }
+
+        // Construir mapa de "remaining" por ítem de recepción (recibido - ya facturado)
         $remainingByReceiptItem = [];
         foreach ($receipt->items as $rit) {
             $already = (int) ($rit->invoiced_qty ?? 0);
             $remainingByReceiptItem[$rit->id] = max(0, (int)$rit->received_qty - $already);
         }
 
-        // Validación de negocio: no facturar más de lo disponible
+        // Mapa de ítems de recepción para validar precios
+        $receiptItemsById = $receipt->items->keyBy('id');
+
+        // Validación de negocio:
+        //  - no facturar más de lo disponible
+        //  - el precio unitario debe coincidir con el de la recepción (unit_cost)
         $errors = [];
         foreach ($data['items'] as $idx => $row) {
-            $rid = (int) $row['purchase_receipt_item_id'];
-            $qty = (int) $row['qty'];
+            $rid      = (int) $row['purchase_receipt_item_id'];
+            $qty      = (int) $row['qty'];
+            $unitCost = (float) $row['unit_cost'];
 
-            $remaining = $remainingByReceiptItem[$rid] ?? null;
-            if ($remaining === null) {
-                $errors["items.$idx.purchase_receipt_item_id"] = 'El ítem de recepción no pertenece a la recepción indicada.';
+            $remaining    = $remainingByReceiptItem[$rid] ?? null;
+            $receiptItem  = $receiptItemsById->get($rid);
+
+            if ($remaining === null || !$receiptItem) {
+                $errors["items.$idx.purchase_receipt_item_id"] =
+                    'El ítem de recepción no pertenece a la recepción indicada.';
                 continue;
             }
+
+            // ❗ Cantidad
             if ($qty > $remaining) {
-                $errors["items.$idx.qty"] = "La cantidad ($qty) excede la disponible para facturar ($remaining).";
+                $errors["items.$idx.qty"] =
+                    "La cantidad ($qty) excede la disponible para facturar ($remaining).";
+            }
+
+            // ❗ Precio unitario: debe coincidir con el de la recepción
+            $receivedCost = (float) $receiptItem->unit_cost;
+            // Permitimos una tolerancia mínima por temas de redondeo
+            if (abs($unitCost - $receivedCost) > 0.0001) {
+                $errors["items.$idx.unit_cost"] =
+                    "El costo unitario de la factura ({$unitCost}) no coincide con el de la recepción ({$receivedCost}).";
             }
         }
 
@@ -114,9 +155,12 @@ class PurchaseInvoiceController extends Controller
             return back()->withInput()->withErrors($errors);
         }
 
+        $invoice = null;
+
         try {
             DB::transaction(function () use ($data, $receipt, &$invoice) {
-                // Crear cabecera de factura
+
+                // 1) Crear cabecera de factura
                 $invoice = PurchaseInvoice::create([
                     'purchase_receipt_id' => $receipt->id,
                     'invoice_number'      => $data['invoice_number'],
@@ -133,6 +177,7 @@ class PurchaseInvoiceController extends Controller
                 $sumTax      = 0.0;
                 $sumTotal    = 0.0;
 
+                // 2) Ítems de factura
                 foreach ($data['items'] as $row) {
                     $qty       = (int) $row['qty'];
                     $unitCost  = (float) $row['unit_cost'];
@@ -159,11 +204,51 @@ class PurchaseInvoiceController extends Controller
                     $sumTotal    += $lineTotal;
                 }
 
-                // Actualiza totales de la factura
+                // 3) Actualiza totales de la factura
                 $invoice->update([
                     'subtotal' => $sumSubtotal,
                     'tax'      => $sumTax,
                     'total'    => $sumTotal,
+                ]);
+
+                // 4) Crear la CUENTA POR PAGAR (Payable)
+                $advance = (float) ($data['advance_amount'] ?? 0);
+                if ($advance < 0) {
+                    $advance = 0;
+                }
+                if ($advance > $sumTotal) {
+                    $advance = $sumTotal;
+                }
+
+                $pending = $sumTotal - $advance;
+
+                $status = 'pendiente';
+                if ($pending <= 0) {
+                    $pending = 0;
+                    $status  = 'pagado';
+                } elseif ($pending < $sumTotal) {
+                    $status  = 'parcial';
+                }
+
+                // Si no vino due_date y es crédito, por defecto +30 días
+                $dueDate = $data['due_date'] ?? null;
+                if (!$dueDate && $data['payment_term'] === 'credito') {
+                    $dueDate = now()->addDays(30)->toDateString();
+                }
+
+                // ⚠️ OPCIONAL: si agregaste purchase_order_id a payables,
+                // asegurate que esté en $fillable del modelo Payable
+                Payable::create([
+                    'purchase_invoice_id' => $invoice->id,
+                    'purchase_order_id'   => $receipt->purchase_order_id ?? $receipt->order->id ?? null, // si existe la columna
+                    'supplier_id'         => $receipt->order->supplier_id,
+                    'total_amount'        => $sumTotal,
+                    'advance_amount'      => $advance,
+                    'pending_amount'      => $pending,
+                    'due_date'            => $dueDate,
+                    'payment_term'        => $data['payment_term'],
+                    'status'              => $status,
+                    'created_by'          => auth()->id(),
                 ]);
             });
         } catch (QueryException $e) {
@@ -178,7 +263,7 @@ class PurchaseInvoiceController extends Controller
 
         return redirect()
             ->route('purchase_invoices.show', $invoice)
-            ->with('success', 'Factura registrada');
+            ->with('success', 'Factura registrada y cuenta por pagar creada');
     }
 
     public function show(PurchaseInvoice $purchase_invoice)

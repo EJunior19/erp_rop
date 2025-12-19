@@ -12,40 +12,40 @@ class CreditController extends Controller
     /**
      * Listado de créditos (pendientes, pagados, vencidos).
      */
-    public function index(\Illuminate\Http\Request $request)
-{
-    $perPage = (int) $request->input('per_page', 15);
-    $order   = $request->input('order', 'due_asc'); // por defecto: vence primero
-    $today   = now()->startOfDay();
+        public function index(\Illuminate\Http\Request $request)
+    {
+        $perPage = (int) $request->input('per_page', 15);
+        $order   = $request->input('order', 'due_asc'); // por defecto: vence primero
+        $today   = now()->startOfDay();
 
-    $credits = \App\Models\Credit::with(['client','sale'])
-        // 🔎 Buscar por cliente, #crédito o #venta
-        ->when($q = trim($request->input('q','')), function ($q1) use ($q) {
-            $q1->where(function ($w) use ($q) {
-                $w->whereHas('client', fn($c) => $c->where('name', 'ilike', "%{$q}%"))
-                  ->orWhere('id', $q)
-                  ->orWhereHas('sale', fn($s) => $s->where('id', $q));
-            });
-        })
-        // 🎯 Estado
-        ->when($status = $request->input('status'), fn($qq) => $qq->where('status', $status))
-        // 🗓️ Rango de vencimiento
-        ->when($d = $request->input('due_from'), fn($qq) => $qq->whereDate('due_date','>=',$d))
-        ->when($d = $request->input('due_to'),   fn($qq) => $qq->whereDate('due_date','<=',$d))
-        // 📌 Solo próximos 7 días (y pendientes)
-        ->when($request->boolean('this_week'), function ($qq) use ($today) {
-            $qq->where('status','pendiente')
-               ->whereBetween('due_date', [$today, $today->copy()->addDays(7)]);
-        })
-        // ↕️ Orden
-        ->when($order === 'due_asc',  fn($qq) => $qq->orderBy('due_date')->orderByDesc('balance'))
-        ->when($order === 'due_desc', fn($qq) => $qq->orderByDesc('due_date'))
-        ->when($order === 'bal_desc', fn($qq) => $qq->orderByDesc('balance'))
-        ->paginate($perPage)
-        ->appends($request->query());
+        $credits = \App\Models\Credit::with(['client','sale'])
+            // 🔎 Buscar por cliente, #crédito o #venta
+            ->when($q = trim($request->input('q','')), function ($q1) use ($q) {
+                $q1->where(function ($w) use ($q) {
+                    $w->whereHas('client', fn($c) => $c->where('name', 'ilike', "%{$q}%"))
+                    ->orWhere('id', $q)
+                    ->orWhereHas('sale', fn($s) => $s->where('id', $q));
+                });
+            })
+            // 🎯 Estado
+            ->when($status = $request->input('status'), fn($qq) => $qq->where('status', $status))
+            // 🗓️ Rango de vencimiento
+            ->when($d = $request->input('due_from'), fn($qq) => $qq->whereDate('due_date','>=',$d))
+            ->when($d = $request->input('due_to'),   fn($qq) => $qq->whereDate('due_date','<=',$d))
+            // 📌 Solo próximos 7 días (y pendientes)
+            ->when($request->boolean('this_week'), function ($qq) use ($today) {
+                $qq->where('status','pendiente')
+                ->whereBetween('due_date', [$today, $today->copy()->addDays(7)]);
+            })
+            // ↕️ Orden
+            ->when($order === 'due_asc',  fn($qq) => $qq->orderBy('due_date')->orderByDesc('balance'))
+            ->when($order === 'due_desc', fn($qq) => $qq->orderByDesc('due_date'))
+            ->when($order === 'bal_desc', fn($qq) => $qq->orderByDesc('balance'))
+            ->paginate($perPage)
+            ->appends($request->query());
 
-    return view('credits.index', compact('credits'));
-}
+        return view('credits.index', compact('credits'));
+    }
 
 
     /**
@@ -53,7 +53,14 @@ class CreditController extends Controller
      */
     public function show(Credit $credit)
     {
-        $credit->load('client', 'sale', 'payments');
+        $credit->load([
+            'client',
+            'sale',
+            'sale.invoice',   // 👈 importante
+            'payments',
+            'payments.user',  // 👈 ya que mostrás el usuario del pago
+        ]);
+
         return view('credits.show', compact('credit'));
     }
 

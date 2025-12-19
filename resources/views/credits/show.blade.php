@@ -80,10 +80,23 @@
       <div class="text-slate-400 text-xs uppercase mb-1">Dirección del cliente</div>
       <div class="text-slate-100">{{ $credit->client->address ?? '—' }}</div>
     </div>
+
     <div>
       <div class="text-slate-400 text-xs uppercase mb-1">N° de factura</div>
-      <div class="text-slate-100">{{ $credit->sale->invoice_number ?? '—' }}</div>
+      <div class="text-slate-100">
+        @php
+          $inv = $credit->sale?->invoice;
+        @endphp
+
+        @if($inv && $inv->number)
+          {{-- Ejemplo: 001-001-0000001 --}}
+          {{ $inv->series }}-{{ str_pad($inv->number, 7, '0', STR_PAD_LEFT) }}
+        @else
+          —
+        @endif
+      </div>
     </div>
+
     <div>
       <div class="text-slate-400 text-xs uppercase mb-1">Creado / Actualizado</div>
       <div class="text-slate-100">
@@ -130,26 +143,17 @@
             $saldoDespues = max(0, (int)$credit->amount - $acum);
           @endphp
           <tr class="hover:bg-slate-800/40 transition">
-            {{-- Nº de cuota (orden del pago) --}}
             <td class="px-4 py-3 font-mono text-slate-200">#{{ $loop->iteration }}</td>
-
-            {{-- Fecha y hora --}}
             <td class="px-4 py-3 text-slate-200">
               {{ $p->payment_date->format('Y-m-d') }}
               <span class="text-slate-400">·</span>
               {{ $p->created_at?->format('H:i') }}
             </td>
-
-            {{-- Monto --}}
             <td class="px-4 py-3 text-right text-emerald-300">{{ $fmt($p->amount) }}</td>
-
-            {{-- Método / Referencia / Nota / Usuario --}}
             <td class="px-4 py-3 text-slate-200">{{ $p->method ?? '—' }}</td>
             <td class="px-4 py-3 text-slate-300">{{ $p->reference ?? '—' }}</td>
             <td class="px-4 py-3 text-slate-300">{{ $p->note ?? '—' }}</td>
             <td class="px-4 py-3 text-slate-300">{{ $p->user->name ?? '—' }}</td>
-
-            {{-- Acumulado y saldo después del pago --}}
             <td class="px-4 py-3 text-right text-slate-200">{{ $fmt($acum) }}</td>
             <td class="px-4 py-3 text-right {{ $saldoDespues === 0 ? 'text-emerald-300' : 'text-amber-300' }}">
               {{ $fmt($saldoDespues) }}
@@ -193,31 +197,41 @@
       <input type="hidden" name="credit_id" value="{{ $credit->id }}">
 
       <div class="lg:col-span-1">
-        <label class="block text-xs uppercase tracking-wide text-slate-400 mb-1">Monto</label>
-        <input type="text" name="amount" inputmode="numeric" placeholder="1.000.000" class="{{ $input }}">
+        <label class="block text-xs uppercase tracking-wide text-slate-400 mb-1">
+          Monto (Gs.)
+        </label>
+        <input type="text"
+               name="amount"
+               inputmode="numeric"
+               placeholder="600.000.000"
+               class="{{ $input }} amount-input"
+               value="{{ old('amount') }}">
+        <p class="text-[11px] text-slate-400 mt-1">
+          Escribí solo números y el sistema formatea así: <span class="font-semibold">600.000.000</span>
+        </p>
         @error('amount') <p class="text-xs text-rose-400 mt-1">{{ $message }}</p> @enderror
       </div>
 
       <div class="lg:col-span-1">
         <label class="block text-xs uppercase tracking-wide text-slate-400 mb-1">Fecha de pago</label>
-        <input type="date" name="payment_date" required class="{{ $input }}">
+        <input type="date" name="payment_date" required class="{{ $input }}" value="{{ old('payment_date') }}">
         @error('payment_date') <p class="text-xs text-rose-400 mt-1">{{ $message }}</p> @enderror
       </div>
 
       <div class="lg:col-span-1">
         <label class="block text-xs uppercase tracking-wide text-slate-400 mb-1">Método</label>
-        <input type="text" name="method" placeholder="Efectivo, Transferencia…" class="{{ $input }}">
+        <input type="text" name="method" placeholder="Efectivo, Transferencia…" class="{{ $input }}" value="{{ old('method') }}">
         @error('method') <p class="text-xs text-rose-400 mt-1">{{ $message }}</p> @enderror
       </div>
 
       <div class="lg:col-span-1">
         <label class="block text-xs uppercase tracking-wide text-slate-400 mb-1">Referencia</label>
-        <input type="text" name="reference" placeholder="Comprobante / N° op." class="{{ $input }}">
+        <input type="text" name="reference" placeholder="Comprobante / N° op." class="{{ $input }}" value="{{ old('reference') }}">
       </div>
 
       <div class="lg:col-span-1">
         <label class="block text-xs uppercase tracking-wide text-slate-400 mb-1">Nota</label>
-        <input type="text" name="note" placeholder="Observaciones" class="{{ $input }}">
+        <input type="text" name="note" placeholder="Observaciones" class="{{ $input }}" value="{{ old('note') }}">
       </div>
 
       <div class="lg:col-span-5 flex items-center justify-end gap-3 pt-2">
@@ -244,4 +258,35 @@ input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
 input[type="number"]{ -moz-appearance:textfield; }
 </style>
+@endpush
+
+@push('scripts')
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const input = document.querySelector(".amount-input");
+    if (!input) return;
+
+    const formatNumber = (value) => {
+        value = value.replace(/\D/g, "");
+        if (!value) return "";
+        return new Intl.NumberFormat("es-PY").format(value);
+    };
+
+    const cleanNumber = (value) => value.replace(/\./g, "");
+
+    if (input.value) {
+        input.value = formatNumber(cleanNumber(input.value));
+    }
+
+    input.addEventListener("input", (e) => {
+        const raw = cleanNumber(e.target.value);
+        e.target.value = formatNumber(raw);
+        e.target.setSelectionRange(e.target.value.length, e.target.value.length);
+    });
+
+    input.form?.addEventListener("submit", () => {
+        input.value = cleanNumber(input.value);
+    });
+});
+</script>
 @endpush

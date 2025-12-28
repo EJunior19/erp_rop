@@ -252,10 +252,15 @@
                            class="w-24 text-right rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-sm focus:outline-none focus:ring focus:ring-indigo-500">
                   </td>
                   <td class="px-3 py-2 text-right">
-                    <input type="text"
-                           name="items[{{ $rowIndex }}][unit_cost]"
-                           value="{{ old("items.$rowIndex.unit_cost", $item->unit_cost ?? 0) }}"
-                           class="unit-cost w-28 text-right rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-sm focus:outline-none focus:ring focus:ring-indigo-500">
+                    <div class="inline-block w-28">
+                      <input type="text"
+                            name="items[{{ $rowIndex }}][unit_cost]"
+                            value="{{ old(
+                                "items.$rowIndex.unit_cost",
+                                isset($item->unit_cost) ? intval($item->unit_cost / 100) : 0
+                            ) }}"
+                            class="unit-cost w-full text-right tabular-nums rounded border border-gray-600 bg-gray-900 text-gray-100 px-2 py-1 text-sm focus:outline-none focus:ring focus:ring-indigo-500">
+                    </div>
                   </td>
                   <td class="px-3 py-2 text-right">
                     <input type="number"
@@ -308,35 +313,42 @@
 {{-- 🔢 Formateo de costos y adelanto en tiempo real --}}
 <script>
 document.addEventListener("DOMContentLoaded", () => {
-    // unit-cost + el adelanto (si querés formatearlo también, dale la misma clase)
-    const inputs = document.querySelectorAll("input.unit-cost, input[name='advance_amount']");
+
+    const inputs = document.querySelectorAll(
+        "input.unit-cost, input[name='advance_amount']"
+    );
 
     const formatNumber = (value) => {
-        value = value.replace(/\D/g, ""); // solo dígitos
+        value = value.replace(/\D/g, ""); // solo números
         if (!value) return "";
-        return new Intl.NumberFormat('es-PY').format(value);
+        return new Intl.NumberFormat("es-PY").format(value);
     };
 
     const cleanNumber = (value) => value.replace(/\./g, "");
 
     inputs.forEach(input => {
-        // Formatear al iniciar (por si viene old())
+
+        // 👉 Formatear valor inicial (desde BD / old())
         if (input.value) {
             input.value = formatNumber(cleanNumber(input.value));
         }
 
-        // Formatear mientras escribe
+        // 👉 Mientras escribe
         input.addEventListener("input", (e) => {
             const raw = cleanNumber(e.target.value);
             e.target.value = formatNumber(raw);
-            e.target.setSelectionRange(e.target.value.length, e.target.value.length);
+            e.target.setSelectionRange(
+                e.target.value.length,
+                e.target.value.length
+            );
         });
 
-        // Antes de enviar → limpiar puntos
+        // 👉 Antes de enviar: SOLO quitar puntos
         input.form?.addEventListener("submit", () => {
             input.value = cleanNumber(input.value);
         });
     });
+
 });
 </script>
 @endsection

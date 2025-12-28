@@ -285,8 +285,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     input.form?.addEventListener("submit", () => {
-        input.value = cleanNumber(input.value);
-    });
+    const raw = cleanNumber(input.value);
+    input.value = raw ? (parseInt(raw, 10) * 100) : 0;
+});
+
 });
 </script>
 @endpush

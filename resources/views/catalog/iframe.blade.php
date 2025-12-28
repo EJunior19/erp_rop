@@ -13,7 +13,7 @@
       </p>
     </div>
 
-    <a href="{{ config('services.catalogo_inteligente.url', 'http://127.0.0.1:8001/productos') }}"
+    <a href="{{ config('services.catalogo_inteligente.url', 'http://158.220.120.146:8082/productos') }}"
        target="_blank" rel="noopener"
        class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow">
       🔗 Abrir en nueva pestaña
@@ -22,7 +22,7 @@
 
   <div class="rounded-2xl border border-gray-800 bg-gray-950 overflow-hidden shadow-xl">
     <iframe
-      src="{{ config('services.catalogo_inteligente.url', 'http://127.0.0.1:8001/productos') }}"
+      src="{{ config('services.catalogo_inteligente.url', 'http://158.220.120.146:8082/productos') }}"
       class="w-full"
       style="height: calc(100vh - 220px); border: 0;"
       loading="lazy"

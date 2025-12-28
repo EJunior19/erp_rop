@@ -37,4 +37,9 @@ class PurchaseInvoice extends Model
             $inv->total    = $inv->items->sum('total');
         });
     }
+    public function purchase()
+{
+    return $this->hasOne(Purchase::class);
+}
+
 }

@@ -8,7 +8,9 @@ use App\Models\{
     PurchaseReceipt,
     PurchaseReceiptItem,
     Product,
-    Payable
+    Payable,
+    PurchaseItem,
+    Purchase
 };
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -143,12 +145,12 @@ class PurchaseInvoiceController extends Controller
             }
 
             // ❗ Precio unitario: debe coincidir con el de la recepción
-            $receivedCost = (float) $receiptItem->unit_cost;
+           // $receivedCost = (float) $receiptItem->unit_cost;
             // Permitimos una tolerancia mínima por temas de redondeo
-            if (abs($unitCost - $receivedCost) > 0.0001) {
-                $errors["items.$idx.unit_cost"] =
-                    "El costo unitario de la factura ({$unitCost}) no coincide con el de la recepción ({$receivedCost}).";
-            }
+            //if (abs($unitCost - $receivedCost) > 0.0001) {
+              //  $errors["items.$idx.unit_cost"] =
+                //    "El costo unitario de la factura ({$unitCost}) no coincide con el de la recepción ({$receivedCost}).";
+            //}
         }
 
         if (!empty($errors)) {
@@ -210,6 +212,37 @@ class PurchaseInvoiceController extends Controller
                     'tax'      => $sumTax,
                     'total'    => $sumTotal,
                 ]);
+
+                // 3.5) Crear COMPRA automáticamente
+                    $purchase = Purchase::create([
+                        'purchase_invoice_id' => $invoice->id,
+                        'supplier_id'         => $receipt->order->supplier_id,
+                        'date'                => $invoice->invoice_date, // ✅
+                        'status'              => 'pendiente',             // ✅
+                        'invoice_number'      => $invoice->invoice_number,
+                        'notes'               => 'Generada desde factura de compra',
+                        'created_by'          => auth()->id(),
+                    ]);
+
+                   // ⭐ 3.6) Crear ITEMS DE LA COMPRA (desde los datos ya validados)
+                    foreach ($data['items'] as $row) {
+
+                        $qty      = (int) $row['qty'];
+                        $unitCost = (float) $row['unit_cost'];
+                        $taxRate  = (float) ($row['tax_rate'] ?? 0);
+
+                        $lineSubtotal = round($qty * $unitCost, 2);
+                        $lineTax      = round($lineSubtotal * ($taxRate / 100), 2);
+                        $lineTotal    = round($lineSubtotal + $lineTax, 2);
+
+                        PurchaseItem::create([
+                            'purchase_id' => $purchase->id,
+                            'product_id'  => (int) $row['product_id'],
+                            'qty'         => (int) $row['qty'],
+                            'cost'        => (float) $row['unit_cost'], // viene de la factura
+                        ]);
+                    }
+
 
                 // 4) Crear la CUENTA POR PAGAR (Payable)
                 $advance = (float) ($data['advance_amount'] ?? 0);

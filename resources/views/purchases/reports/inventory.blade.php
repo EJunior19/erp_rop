@@ -41,75 +41,82 @@
   </form>
 
   <div class="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden shadow">
-    <div class="max-w-full overflow-x-auto">
-      <table class="min-w-full text-sm">
-        <thead class="bg-zinc-800 text-zinc-300 uppercase text-xs tracking-wider">
-          <tr>
-            <th class="px-4 py-3 text-left whitespace-nowrap">Factura / Razón</th>
-            <th class="px-4 py-3 text-left">Producto</th>
-            <th class="px-4 py-3 text-center whitespace-nowrap">Tipo</th>
-            <th class="px-4 py-3 text-right whitespace-nowrap">Cantidad</th>
-            <th class="px-4 py-3 text-center whitespace-nowrap">Fecha</th>
-          </tr>
-        </thead>
 
-        <tbody class="divide-y divide-zinc-800 text-zinc-200">
-          @forelse($movements as $m)
-            @php
-              $qty = $m->qty ?? $m->quantity ?? 0; // ✅ fallback
-              $type = strtolower((string)($m->type ?? ''));
-              $badge = $type === 'entrada'
-                ? 'bg-emerald-600/20 text-emerald-300 border-emerald-500/40'
-                : 'bg-rose-600/20 text-rose-300 border-rose-500/40';
-            @endphp
+  {{-- CONTENEDOR SCROLL (SOLO LA TABLA) --}}
+  <div class="max-h-[65vh] overflow-y-auto overflow-x-auto">
 
-            <tr class="hover:bg-zinc-800/50 transition">
-              {{-- reason guarda: "Compra #ID" o "Venta #ID" --}}
-              <td class="px-4 py-3 font-mono text-zinc-300 whitespace-nowrap">
-                {{ $m->reason ?? '—' }}
-              </td>
+    <table class="min-w-full text-sm">
+      <thead class="bg-zinc-800 text-zinc-300 uppercase text-xs tracking-wider sticky top-0 z-20">
+        <tr>
+          <th class="px-4 py-3 text-left whitespace-nowrap">Factura / Razón</th>
+          <th class="px-4 py-3 text-left">Producto</th>
+          <th class="px-4 py-3 text-center whitespace-nowrap">Tipo</th>
+          <th class="px-4 py-3 text-right whitespace-nowrap">Cantidad</th>
+          <th class="px-4 py-3 text-center whitespace-nowrap">Fecha</th>
+        </tr>
+      </thead>
 
-              <td class="px-4 py-3">
-                <div class="font-semibold text-zinc-100">
-                  {{ $m->product->name ?? '—' }}
+      <tbody class="divide-y divide-zinc-800 text-zinc-200">
+        @forelse($movements as $m)
+          @php
+            $qty = $m->qty ?? $m->quantity ?? 0;
+            $type = strtolower((string)($m->type ?? ''));
+            $badge = $type === 'entrada'
+              ? 'bg-emerald-600/20 text-emerald-300 border-emerald-500/40'
+              : 'bg-rose-600/20 text-rose-300 border-rose-500/40';
+          @endphp
+
+          <tr class="hover:bg-zinc-800/50 transition">
+            <td class="px-4 py-3 font-mono text-zinc-300 whitespace-nowrap">
+              {{ $m->reason ?? '—' }}
+            </td>
+
+            <td class="px-4 py-3">
+              <div class="font-semibold text-zinc-100">
+                {{ $m->product->name ?? '—' }}
+              </div>
+              @if(!empty($m->product?->code))
+                <div class="text-[11px] text-zinc-400 font-mono">
+                  SKU: {{ $m->product->code }}
                 </div>
-                @if(!empty($m->product?->code))
-                  <div class="text-[11px] text-zinc-400 font-mono">SKU: {{ $m->product->code }}</div>
-                @endif
-              </td>
+              @endif
+            </td>
 
-              <td class="px-4 py-3 text-center">
-                <span class="inline-flex items-center px-2 py-1 rounded-lg text-xs border {{ $badge }}">
-                  {{ $type ? ucfirst($type) : '—' }}
-                </span>
-              </td>
+            <td class="px-4 py-3 text-center">
+              <span class="inline-flex items-center px-2 py-1 rounded-lg text-xs border {{ $badge }}">
+                {{ $type ? ucfirst($type) : '—' }}
+              </span>
+            </td>
 
-              <td class="px-4 py-3 text-right font-bold text-purple-300 tabular-nums whitespace-nowrap">
-                {{ number_format((float)$qty, 0, ',', '.') }}
-              </td>
+            <td class="px-4 py-3 text-right font-bold text-purple-300 tabular-nums whitespace-nowrap">
+              {{ number_format((float)$qty, 0, ',', '.') }}
+            </td>
 
-              <td class="px-4 py-3 text-center text-zinc-400 whitespace-nowrap">
-                {{ optional($m->created_at)->format('Y-m-d H:i') ?? '—' }}
-              </td>
-            </tr>
-          @empty
-            <tr>
-              <td colspan="5" class="px-6 py-10 text-center text-zinc-500 italic">
-                🚫 No hay movimientos de inventario
-              </td>
-            </tr>
-          @endforelse
-        </tbody>
-      </table>
-    </div>
+            <td class="px-4 py-3 text-center text-zinc-400 whitespace-nowrap">
+              {{ optional($m->created_at)->format('Y-m-d H:i') ?? '—' }}
+            </td>
+          </tr>
+        @empty
+          <tr>
+            <td colspan="5" class="px-6 py-10 text-center text-zinc-500 italic">
+              🚫 No hay movimientos de inventario
+            </td>
+          </tr>
+        @endforelse
+      </tbody>
+    </table>
 
-    {{-- Si viene paginado --}}
-    @if(method_exists($movements, 'links'))
-      <div class="p-4 border-t border-zinc-800">
-        {{ $movements->withQueryString()->links() }}
-      </div>
-    @endif
   </div>
+
+  {{-- PAGINACIÓN FIJA --}}
+  @if(method_exists($movements, 'links'))
+    <div class="p-4 border-t border-zinc-800">
+      {{ $movements->withQueryString()->links() }}
+    </div>
+  @endif
+
+</div>
+
 
 </div>
 @endsection

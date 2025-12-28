@@ -41,6 +41,12 @@ class Purchase extends Model
         return $this->hasMany(PurchaseItem::class);
     }
 
+    public function invoice()
+    {
+        return $this->belongsTo(PurchaseInvoice::class, 'purchase_invoice_id');
+    }
+
+
     /* =========================
      * Totales
      * ========================= */

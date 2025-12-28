@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule; // ✅ FALTABA
+use App\Models\InventoryMovement;
 
 class ProductController extends Controller
 {
@@ -164,15 +165,25 @@ class ProductController extends Controller
             ->with('success', "Producto {$product->name} creado correctamente.");
     }
 
-    public function show(Product $product)
+   public function show(Product $product)
     {
         $product->load([
-            'brand','category','supplier','installments',
+            'brand',
+            'category',
+            'supplier',
+            'installments',
             'images' => fn($q) => $q->orderBy('sort_order')->orderBy('id'),
-            'coverImage'
+            'coverImage',
         ]);
 
-        return view('products.show', compact('product'));
+        // ✅ Cargar últimos movimientos del producto
+        $movements = InventoryMovement::with(['product','user'])
+            ->where('product_id', $product->id)
+            ->latest()
+            ->take(20)
+            ->get();
+
+        return view('products.show', compact('product', 'movements'));
     }
 
     public function edit(Product $product)

@@ -193,31 +193,67 @@ class PurchaseReceiptController extends Controller
      * y mantener solo las rutas hacia ese controlador.
      */
     public function approve(PurchaseReceipt $purchase_receipt)
-    {
-        if ($purchase_receipt->status !== 'pendiente_aprobacion') {
-            return back()->with('error', 'La recepción no está pendiente de aprobación');
+{
+    if ($purchase_receipt->status !== 'pendiente_aprobacion') {
+        return back()->with('error', 'La recepción no está pendiente de aprobación');
+    }
+
+    DB::transaction(function () use ($purchase_receipt) {
+
+        $purchase_receipt->load([
+            'items',
+            'order.items',
+            'order.receipts.items',
+        ]);
+
+        // 1️⃣ Afectar stock
+        foreach ($purchase_receipt->items as $item) {
+            $item->product->increment('stock', (int) $item->received_qty);
         }
 
-        DB::transaction(function () use ($purchase_receipt) {
-            $purchase_receipt->load(['items.product', 'order']);
+        // 2️⃣ Aprobar recepción
+        $purchase_receipt->update([
+            'status'      => 'aprobado',
+            'approved_by' => auth()->id(),
+            'approved_at' => now(),
+        ]);
 
-            // Afectar stock SOLO desde el flujo nuevo
-            foreach ($purchase_receipt->items as $item) {
-                $item->product->increment('stock', (int) $item->received_qty);
+        // 3️⃣ Verificar si la OC está completamente recibida
+        $order = $purchase_receipt->order;
+
+        $orderedByProduct = $order->items
+            ->groupBy('product_id')
+            ->map(fn ($g) => $g->sum('quantity'));
+
+        $receivedByProduct = collect();
+
+        foreach ($order->receipts->where('status', 'aprobado') as $receipt) {
+            foreach ($receipt->items as $ritem) {
+                $receivedByProduct[$ritem->product_id] =
+                    ($receivedByProduct[$ritem->product_id] ?? 0) + $ritem->received_qty;
             }
+        }
 
-            $purchase_receipt->update([
-                'status'      => 'aprobado',
-                'approved_by' => auth()->id(),
-                'approved_at' => now(),
+        $fullyReceived = true;
+
+        foreach ($orderedByProduct as $productId => $orderedQty) {
+            if (($receivedByProduct[$productId] ?? 0) < $orderedQty) {
+                $fullyReceived = false;
+                break;
+            }
+        }
+
+        // 4️⃣ Si todo fue recibido → marcar OC como recibida
+        if ($fullyReceived) {
+            $order->update([
+                'status' => 'recibido',
             ]);
+        }
+    });
 
-            // Si querés, más adelante: cerrar OC cuando todo esté recibido.
-            // $purchase_receipt->order->update(['status' => 'recibido']);
-        });
+    return back()->with('success', 'Recepción aprobada correctamente.');
+}
 
-        return back()->with('success','Recepción aprobada y stock actualizado');
-    }
     /**
      * Rechazar recepción (sin afectar stock).
      */

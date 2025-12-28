@@ -3,7 +3,7 @@
 
 @section('content')
 <div class="flex items-center justify-between mb-6">
-  <h1 class="text-2xl font-bold text-black-200">📦 Productos</h1>
+  <h1 class="text-2xl font-bold text-slate-100">📦 Productos</h1>
 
   {{-- Botón para crear nuevo producto --}}
   <x-create-button route="{{ route('products.create') }}" text="Nuevo producto" />
@@ -12,10 +12,13 @@
 {{-- Mensajes flash --}}
 <x-flash-message />
 
-<div class="bg-gray-900 text-white rounded-xl shadow-md border border-gray-700">
-  <div class="overflow-x-auto rounded-t-xl">
+<div class="bg-slate-900 text-slate-100 rounded-xl shadow-xl border border-slate-700">
+
+  {{-- Scroll SOLO de la tabla --}}
+  <div class="max-h-[70vh] overflow-y-auto overflow-x-auto rounded-t-xl">
+
     <table class="min-w-full text-sm text-left">
-      <thead class="bg-gray-700 text-gray-200 uppercase text-xs tracking-wide">
+      <thead class="bg-slate-800 text-slate-200 uppercase text-[11px] tracking-wider sticky top-0 z-10 border-b border-slate-600">
         <tr>
           <th class="px-4 py-3">#</th>
           <th class="px-4 py-3">Código</th>
@@ -28,26 +31,42 @@
           <th class="px-4 py-3 text-right">Acciones</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-gray-700">
+
+      <tbody class="divide-y divide-slate-700">
         @forelse($products as $p)
           @php
             $stock = (int) ($p->stock ?? 0);
             $stockColor =
-                $stock <= 0 ? 'bg-red-600 text-red-50' :
-                ($stock <= 5 ? 'bg-amber-400 text-amber-950' :
-                'bg-emerald-500 text-emerald-950');
+              $stock <= 0 ? 'bg-red-600 text-red-50' :
+              ($stock <= 5 ? 'bg-amber-400 text-amber-950' :
+              'bg-emerald-500 text-emerald-950');
           @endphp
 
-          <tr class="hover:bg-gray-800/60 transition">
-            <td class="px-4 py-3 font-medium">{{ $p->id }}</td>
-            <td class="px-4 py-3 font-mono">{{ $p->code ?? '—' }}</td>
-            <td class="px-4 py-3">{{ $p->name }}</td>
-            <td class="px-4 py-3">{{ $p->brand->name ?? '—' }}</td>
-            <td class="px-4 py-3">{{ $p->category->name ?? '—' }}</td>
-            <td class="px-4 py-3">{{ $p->supplier->name ?? '—' }}</td>
+          <tr class="odd:bg-slate-900 even:bg-slate-800/40 hover:bg-slate-700/40 transition">
+            <td class="px-4 py-3 font-mono text-slate-300">{{ $p->id }}</td>
 
-            {{-- Precio contado --}}
-            <td class="px-4 py-3 text-right">
+            <td class="px-4 py-3 font-mono text-slate-200">
+              {{ $p->code ?? '—' }}
+            </td>
+
+            <td class="px-4 py-3 font-medium text-slate-100">
+              {{ $p->name }}
+            </td>
+
+            <td class="px-4 py-3 text-slate-300">
+              {{ $p->brand->name ?? '—' }}
+            </td>
+
+            <td class="px-4 py-3 text-slate-300">
+              {{ $p->category->name ?? '—' }}
+            </td>
+
+            <td class="px-4 py-3 text-slate-300">
+              {{ $p->supplier->name ?? '—' }}
+            </td>
+
+            {{-- Precio --}}
+            <td class="px-4 py-3 text-right font-semibold text-emerald-400">
               @if(!is_null($p->price_cash))
                 @money($p->price_cash)
               @else
@@ -55,20 +74,15 @@
               @endif
             </td>
 
-            {{-- 🔹 Stock: número + texto, alineado a la derecha --}}
+            {{-- 🔢 Stock SOLO número --}}
             <td class="px-4 py-3 text-right">
-              <span class="inline-flex items-center justify-end gap-2">
-                <span class="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold {{ $stockColor }}">
-                  {{ $stock }}
-                </span>
-                <span class="text-xs text-gray-300">
-                  {{ $stock === 1 ? 'unidad' : '' }}
-                </span>
+              <span class="inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold {{ $stockColor }}">
+                {{ $stock }}
               </span>
             </td>
 
             {{-- Acciones --}}
-            <td class="px-4 py-3 text-right">
+            <td class="px-4 py-3 text-right whitespace-nowrap">
               <x-action-buttons 
                 :show="route('products.show',$p)"
                 :edit="route('products.edit',$p)"
@@ -78,7 +92,7 @@
           </tr>
         @empty
           <tr>
-            <td colspan="9" class="px-6 py-8 text-center text-gray-400 italic">
+            <td colspan="9" class="px-6 py-10 text-center text-slate-400 italic">
               Sin productos
             </td>
           </tr>
@@ -87,8 +101,8 @@
     </table>
   </div>
 
-  {{-- Paginación --}}
-  <div class="p-4 border-t border-gray-700">
+  {{-- Paginación (fija, no scrollea) --}}
+  <div class="p-4 border-t border-slate-700">
     {{ $products->links() }}
   </div>
 </div>

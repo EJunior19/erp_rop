@@ -19,16 +19,16 @@
 
 <body
   x-data="{ sidebarOpen: false }"
-  class="h-full overflow-hidden bg-gray-100 text-gray-900 flex flex-col"
+  class="h-full overflow-hidden bg-[#0b0d10] text-gray-100 flex flex-col"
 >
-  {{-- ===== Topbar (fijo, sin scroll) ===== --}}
-  <header class="z-40 bg-white border-b shadow-sm flex-shrink-0">
+  {{-- ===== Topbar ===== --}}
+  <header class="z-40 bg-[#0f1114] border-b border-gray-700 shadow-sm flex-shrink-0">
     <nav class="flex items-center justify-between px-4 py-3">
       <div class="flex items-center gap-3">
         {{-- Hamburguesa (móvil) --}}
         <button
           type="button"
-          class="md:hidden inline-flex items-center justify-center rounded-md p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          class="md:hidden inline-flex items-center justify-center rounded-md p-2 text-gray-400 hover:text-gray-100 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
           @click="sidebarOpen = true"
           aria-controls="sidebarScroll"
           :aria-expanded="sidebarOpen"
@@ -40,13 +40,13 @@
           </svg>
         </button>
 
-        <a href="{{ route('dashboard.index') }}" class="font-bold text-lg">
+        <a href="{{ route('dashboard.index') }}" class="font-bold text-lg text-gray-100">
           ERP Katuete Importados
         </a>
 
-        {{-- Breadcrumbs opcionales --}}
+        {{-- Breadcrumbs --}}
         @hasSection('breadcrumbs')
-          <div class="hidden md:block border-l pl-3 ml-3 text-sm text-gray-500">
+          <div class="hidden md:block border-l border-gray-700 pl-3 ml-3 text-sm text-gray-400">
             @yield('breadcrumbs')
           </div>
         @endif
@@ -59,40 +59,41 @@
             type="text"
             name="q"
             placeholder="Buscar…"
-            class="w-full rounded-l-md border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            class="w-full rounded-l-md bg-[#0b0d10] border border-gray-700 text-sm text-gray-100 placeholder-gray-500 focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
           />
-          <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white px-3 rounded-r-md">
+          <button type="submit" class="bg-sky-600 hover:bg-sky-500 text-white px-3 rounded-r-md">
             <span class="sr-only">Buscar</span>
             <i class="fas fa-search"></i>
           </button>
         </div>
       </form>
 
-      {{-- Acciones derechas opcionales --}}
+      {{-- Acciones derechas --}}
       <div class="hidden md:flex items-center gap-2">
         @yield('toolbar')
       </div>
     </nav>
   </header>
 
-  {{-- ===== Wrapper principal: sidebar + contenido (ocupa todo el alto restante) ===== --}}
+  {{-- ===== Wrapper principal ===== --}}
   <div class="flex flex-1 min-h-0 overflow-hidden">
     {{-- ===== Sidebar ===== --}}
     <div class="relative z-30 flex-shrink-0" x-cloak>
       {{-- Overlay móvil --}}
       <div
-        class="fixed inset-0 bg-black/40 md:hidden"
+        class="fixed inset-0 bg-black/50 md:hidden"
         x-show="sidebarOpen"
         x-transition.opacity
         @click="sidebarOpen=false"
         aria-hidden="true"
       ></div>
 
-      {{-- Contenedor sidebar --}}
+      {{-- Sidebar --}}
       <aside
         id="sidebarScroll"
-        class="fixed md:static inset-y-0 left-0 w-72 md:w-64 bg-white md:bg-transparent
-               md:border-r md:border-gray-200 transform md:transform-none
+        class="fixed md:static inset-y-0 left-0 w-72 md:w-64 bg-[#0f1114]
+               md:border-r md:border-gray-700
+               transform md:transform-none
                transition-transform md:transition-none
                h-full overflow-y-auto overscroll-contain"
         :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'"
@@ -100,63 +101,61 @@
         @keydown.escape.window="sidebarOpen=false"
         aria-label="Menú lateral"
       >
-        {{-- En móvil, al hacer click en un link, cerramos el sidebar (UX) --}}
         <div
           class="h-full"
-          @click="
-            if ($event.target.closest('a')) { sidebarOpen = false }
-          "
+          @click="if ($event.target.closest('a')) sidebarOpen = false"
         >
           @include('layout.menu')
         </div>
       </aside>
     </div>
 
-    {{-- ===== Columna derecha: contenido + footer ===== --}}
+    {{-- ===== Columna derecha ===== --}}
     <div class="flex-1 flex flex-col min-h-0">
-      {{-- Contenido scrollable independiente --}}
-      <main class="flex-1 overflow-y-auto p-6">
-        {{-- Mensajes flash globales --}}
-        <x-flash-message />
-        @yield('content')
+      {{-- Contenido --}}
+      <main class="flex-1 min-h-0 overflow-hidden bg-[#0b0d10]">
+
+        {{-- CONTENEDOR REAL DE SCROLL --}}
+        <div class="h-full overflow-y-auto p-6">
+          <x-flash-message />
+          @yield('content')
+        </div>
+
       </main>
 
-      {{-- Footer fijo dentro de la columna derecha --}}
-      <footer class="bg-white border-t py-4 px-6 text-sm text-gray-500 flex flex-col md:flex-row md:items-center md:justify-between gap-2 flex-shrink-0">
+
+      {{-- Footer --}}
+      <footer class="bg-[#0f1114] border-t border-gray-700 py-4 px-6 text-sm text-gray-400 flex flex-col md:flex-row md:items-center md:justify-between gap-2 flex-shrink-0">
         <div>© {{ date('Y') }} CRM Katuete</div>
         <div class="space-x-3">
-          <a href="javascript:void(0)" class="hover:text-gray-700">Política de Privacidad</a>
+          <a href="javascript:void(0)" class="hover:text-gray-200">Política de Privacidad</a>
           <span aria-hidden="true">&middot;</span>
-          <a href="javascript:void(0)" class="hover:text-gray-700">Términos y Condiciones</a>
+          <a href="javascript:void(0)" class="hover:text-gray-200">Términos y Condiciones</a>
         </div>
       </footer>
     </div>
   </div>
 
-  {{-- Alpine.js (defer) --}}
+  {{-- Alpine.js --}}
   <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
   {{-- SweetAlert2 --}}
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
-  {{-- ✅ FIX: Persistir scroll del sidebar entre navegaciones --}}
+  {{-- Persistir scroll del sidebar --}}
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       const el = document.getElementById('sidebarScroll');
       if (!el) return;
 
       const key = 'sidebarScrollTop';
-
-      // Restaurar
       const saved = sessionStorage.getItem(key);
       if (saved !== null) el.scrollTop = parseInt(saved, 10);
 
-      // Guardar al scrollear
       el.addEventListener('scroll', () => {
         sessionStorage.setItem(key, String(el.scrollTop));
       }, { passive: true });
 
-      // Guardar antes de navegar (click en links dentro del sidebar)
       el.querySelectorAll('a[href]').forEach(a => {
         a.addEventListener('click', () => {
           sessionStorage.setItem(key, String(el.scrollTop));
@@ -165,7 +164,7 @@
     });
   </script>
 
-  {{-- Confirmación global de formularios con clase .delete-form o data-confirm --}}
+  {{-- Confirmación global --}}
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       document.body.addEventListener('submit', (e) => {
@@ -192,11 +191,10 @@
         }).then((result) => {
           if (result.isConfirmed) form.submit();
         });
-      }, { passive: false });
+      });
     });
   </script>
 
-  {{-- Hooks por página --}}
   @stack('scripts')
 </body>
 </html>

@@ -173,7 +173,13 @@ class PurchaseController extends Controller
     public function show(Purchase $purchase)
     {
         $purchase->load('supplier', 'items.product');
-        return view('purchases.show', compact('purchase'));
+
+        $total = DB::table('purchase_items')
+            ->where('purchase_id', $purchase->id)
+            ->selectRaw('COALESCE(SUM(qty * cost), 0) as total')
+            ->value('total');
+
+        return view('purchases.show', compact('purchase', 'total'));
     }
 
     // ================== EDIT ==================

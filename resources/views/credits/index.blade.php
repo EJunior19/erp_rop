@@ -148,8 +148,12 @@
 
 {{-- ========= Tabla ========= --}}
 <div class="bg-slate-900 rounded-xl shadow-md border border-slate-700">
-  <div class="overflow-x-auto rounded-t-xl">
+
+  {{-- CONTENEDOR SCROLL SOLO TABLA --}}
+  <div class="max-h-[70vh] overflow-y-auto overflow-x-auto rounded-t-xl">
+
     <table class="min-w-full text-sm">
+
       <thead class="bg-slate-800/95 text-slate-200 uppercase text-[11px] tracking-wider sticky top-0 z-10">
         <tr>
           <th class="px-4 py-3 text-left">#</th>
@@ -174,7 +178,7 @@
                 : ($days !== null && $days >= 0 && $days <= 7
                     ? 'bg-amber-900/10'
                     : '');
-            $lastPayment = $credit->payments->first(); // with() en el controlador
+            $lastPayment = $credit->payments->sortByDesc('created_at')->first(); // último pago real
           @endphp
 
           <tr class="hover:bg-slate-800/50 transition {{ $rowClass }}">

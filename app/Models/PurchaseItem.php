@@ -6,13 +6,20 @@ use Illuminate\Database\Eloquent\Model;
 
 class PurchaseItem extends Model
 {
-    // Si tu tabla NO tiene created_at/updated_at
-    public $timestamps = false;
+    protected $table = 'purchase_items';
 
     protected $fillable = [
+        'purchase_id',
         'product_id',
         'qty',
-        'cost',
+        'cost',          // ✅ ESTE ES EL CAMPO REAL
+    ];
+
+    protected $casts = [
+        'purchase_id' => 'integer',
+        'product_id'  => 'integer',
+        'qty'         => 'integer',
+        'cost'        => 'float', // ✅ NO unit_cost
     ];
 
     public function purchase()
@@ -24,8 +31,4 @@ class PurchaseItem extends Model
     {
         return $this->belongsTo(Product::class);
     }
-    protected $casts = [
-        'qty'  => 'integer',
-        'cost' => 'integer',
-    ];
 }

@@ -5,83 +5,131 @@
 
 @push('styles')
 <style>
-  /* ===== Scoped dark mode SOLO para esta vista ===== */
-  .contact-scope { background:#0b0f14; color:#e5e7eb; }
+  /* =========================================================
+   *  FIX: Forzar modo oscuro SOLO en esta vista
+   * ========================================================= */
 
-  .contact-scope .card-dark {
+  /* Scope principal */
+  .contact-scope{
     background:#0b0f14;
+    color:#e5e7eb;
+    border-radius:16px;
+    padding:16px;
+  }
+
+  /* 🔥 OVERRIDE para cualquier componente "blanco" dentro del scope */
+  .contact-scope .bg-white,
+  .contact-scope .bg-gray-50,
+  .contact-scope .bg-gray-100,
+  .contact-scope .bg-slate-50,
+  .contact-scope .bg-slate-100{
+    background:#0b0f14 !important;
+  }
+
+  .contact-scope .text-gray-900,
+  .contact-scope .text-slate-900,
+  .contact-scope .text-black{
+    color:#e5e7eb !important;
+  }
+
+  .contact-scope .border-gray-200,
+  .contact-scope .border-gray-300,
+  .contact-scope .border-slate-200{
+    border-color:#1f2937 !important;
+  }
+
+  /* Cards */
+  .contact-scope .card-dark{
+    background:#0f172a;
     border:1px solid rgba(16,185,129,.35);
-    border-radius:12px;
+    border-radius:14px;
   }
-
-  .contact-scope .card-plain {
-    background:#0b0f14;
-    border:1px solid #111827;
-    border-radius:12px;
-  }
-
-  .contact-scope .input-dark {
+  .contact-scope .card-plain{
     background:#0f172a;
     border:1px solid #1f2937;
+    border-radius:14px;
+  }
+
+  /* Inputs */
+  .contact-scope .input-dark{
+    background:#0b1220;
+    border:1px solid #243043;
     color:#e5e7eb;
-    border-radius:.5rem;
+    border-radius:.6rem;
+    outline:none;
+  }
+  .contact-scope .input-dark::placeholder{ color:#6b7280; }
+  .contact-scope .input-dark:focus{
+    border-color:#22c55e;
+    box-shadow:0 0 0 3px rgba(34,197,94,.15);
   }
 
-  .contact-scope .input-dark::placeholder { color:#6b7280; }
-
-  .contact-scope .btn-emerald {
+  /* Buttons */
+  .contact-scope .btn-emerald{
     background:#059669;
-    color:white;
+    color:#fff;
   }
+  .contact-scope .btn-emerald:hover{ background:#047857; }
 
-  .contact-scope .btn-emerald:hover {
-    background:#047857;
+  .contact-scope .btn-dark{
+    background:#0b1220;
+    border:1px solid #243043;
+    color:#e5e7eb;
   }
+  .contact-scope .btn-dark:hover{ background:#111b2c; }
 
-  .contact-scope .thead-dark {
-    background:#020617;
+  /* Table */
+  .contact-scope .thead-dark{
+    background:#0b1220;
     position:sticky;
     top:0;
     z-index:10;
+    border-bottom:1px solid #1f2937;
+  }
+  .contact-scope .tr-hover:hover{
+    background:rgba(15,23,42,.75);
+  }
+  .contact-scope table{
+    width:100%;
+  }
+  .contact-scope td, .contact-scope th{
+    border-color:#1f2937 !important;
   }
 
-  .contact-scope .tr-hover:hover {
-    background:rgba(15,23,42,.7);
-  }
+  /* Muted */
+  .contact-scope .text-muted{ color:#94a3b8; }
+  .contact-scope .border-muted{ border-color:#1f2937; }
 
-  .contact-scope .text-muted { color:#94a3b8; }
-  .contact-scope .border-muted { border-color:#1f2937; }
-
-  .contact-scope .tooltip {
-    position: relative;
-  }
-
-  .contact-scope .tooltip:hover::after {
+  /* Tooltip */
+  .contact-scope .tooltip{ position:relative; }
+  .contact-scope .tooltip:hover::after{
     content: attr(data-tip);
     position:absolute;
     left:0;
-    top:100%;
-    background:#020617;
+    top:110%;
+    background:#0b1220;
+    border:1px solid #243043;
     color:#e5e7eb;
-    padding:6px 8px;
-    border-radius:6px;
+    padding:8px 10px;
+    border-radius:10px;
     font-size:12px;
-    max-width:32rem;
+    max-width:36rem;
     white-space:pre-wrap;
     z-index:50;
+    box-shadow:0 10px 25px rgba(0,0,0,.45);
   }
 </style>
 @endpush
 
 @section('content')
-<div class="contact-scope px-4 md:px-6">
+<div class="contact-scope">
 
   {{-- HEADER --}}
   <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
     <div>
       <h1 class="text-3xl font-bold text-emerald-400 flex items-center gap-2">
-        💬 Panel de Contacto
-        <span class="text-xs px-2 py-0.5 rounded bg-emerald-900/40 text-emerald-300">
+        💬 Panel de Contactos
+        <span class="text-xs px-2 py-0.5 rounded bg-emerald-900/40 text-emerald-300 border border-emerald-500/30">
           Comunicaciones
         </span>
       </h1>
@@ -91,7 +139,7 @@
     </div>
 
     <a href="{{ route('dashboard.index') }}"
-       class="px-3 py-2 rounded-lg border border-muted bg-gray-900 text-gray-200 text-sm hover:bg-gray-800">
+       class="px-3 py-2 rounded-lg btn-dark text-sm">
       ⬅️ Volver
     </a>
   </div>
@@ -101,11 +149,11 @@
     <x-kpi-card title="Enviados hoy" :value="$kpis['sent_today']" color="emerald"/>
     <x-kpi-card title="Fallidos hoy" :value="$kpis['fails_today']" color="red"/>
     <x-kpi-card title="En cola" :value="$kpis['queued']" color="amber"/>
-    <x-kpi-card title="Sin canal" :value="$kpis['clients_no_channel']" color="zinc"/>
+    <x-kpi-card title="Entregados" :value="$kpis['delivered'] ?? 0" color="emerald"/>
   </div>
 
   {{-- FILTROS --}}
-  <form method="GET" class="grid md:grid-cols-4 gap-3 mb-6">
+  <form method="GET" class="grid md:grid-cols-5 gap-3 mb-6">
     <input type="text" name="q" value="{{ request('q') }}"
            placeholder="Buscar cliente / RUC"
            class="input-dark px-3 py-2">
@@ -117,16 +165,18 @@
       @endforeach
     </select>
 
-    <select name="state" class="input-dark px-3 py-2">
-      <option value="">Todos los estados</option>
-      @foreach(['queued'=>'En cola','sent'=>'Enviado','fail'=>'Falló'] as $k=>$v)
-        <option value="{{ $k }}" @selected(request('state')===$k)>{{ $v }}</option>
-      @endforeach
-    </select>
+    <input type="date" name="from" value="{{ request('from') }}" class="input-dark px-3 py-2">
+    <input type="date" name="to" value="{{ request('to') }}" class="input-dark px-3 py-2">
 
-    <button class="btn-emerald px-4 py-2 rounded shadow">
-      🔍 Filtrar
-    </button>
+    <div class="flex gap-2">
+      <button class="btn-emerald px-4 py-2 rounded-lg shadow">
+        🔍 Filtrar
+      </button>
+      <a href="{{ route('contact.panel') }}"
+         class="btn-dark px-4 py-2 rounded-lg">
+        Limpiar
+      </a>
+    </div>
   </form>
 
   {{-- ENVÍO RÁPIDO --}}
@@ -160,7 +210,7 @@
       </div>
 
       <div class="flex justify-end mt-3">
-        <button class="btn-emerald px-4 py-2 rounded shadow">
+        <button class="btn-emerald px-4 py-2 rounded-lg shadow">
           🚀 Enviar mensaje
         </button>
       </div>
@@ -185,19 +235,23 @@
         <tbody class="divide-y border-muted">
           @forelse($logs as $l)
             <tr class="tr-hover">
-              <td class="px-4 py-3 whitespace-nowrap">{{ $l->created_at?->format('Y-m-d H:i') }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-muted">{{ $l->created_at?->format('Y-m-d H:i') }}</td>
+
               <td class="px-4 py-3">
                 <a href="{{ route('clients.edit',$l->client) }}"
                    class="text-emerald-400 hover:underline">
                   {{ $l->client?->name }}
                 </a>
               </td>
-              <td class="px-4 py-3 capitalize">{{ $l->channel }}</td>
+
+              <td class="px-4 py-3 capitalize text-gray-200">{{ $l->channel }}</td>
+
               <td class="px-4 py-3">
                 <x-status-badge
                   :color="['queued'=>'amber','sent'=>'emerald','fail'=>'red'][$l->status] ?? 'zinc'"
                   :label="ucfirst($l->status)" />
               </td>
+
               <td class="px-4 py-3">
                 @if($l->channel==='whatsapp' && data_get($l->meta,'wa_link'))
                   <a href="{{ data_get($l->meta,'wa_link') }}" target="_blank"
@@ -208,6 +262,7 @@
                   <span class="text-muted">{{ $l->to_ref }}</span>
                 @endif
               </td>
+
               <td class="px-4 py-3">
                 <span class="tooltip block truncate max-w-[36rem]"
                       data-tip="{{ $l->message }}">

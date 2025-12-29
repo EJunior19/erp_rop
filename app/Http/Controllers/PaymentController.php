@@ -22,7 +22,6 @@ class PaymentController extends Controller
     {
         // 1) Resolver el crédito según el tipo de ruta
         if (!$credit) {
-            // Ruta plana: exige credit_id
             $request->validate([
                 'credit_id' => ['required', 'exists:credits,id'],
             ]);
@@ -30,7 +29,8 @@ class PaymentController extends Controller
         }
 
         // 2) Normalizar monto (acepta "1.500.000" -> 1500000)
-        $amountClean = (int) preg_replace('/\D/', '', (string) $request->input('amount'));
+        $digits = preg_replace('/\D+/', '', (string) $request->input('amount', ''));
+        $amountClean = ($digits === '' ? null : (int) $digits);
 
         // 3) Validar campos (con amount ya normalizado)
         $request->merge(['amount' => $amountClean]);
@@ -43,7 +43,7 @@ class PaymentController extends Controller
         ]);
 
         // 4) Regla de negocio: el abono no puede superar el saldo
-        if ($amountClean > (int) $credit->balance) {
+        if ((int) $amountClean > (int) $credit->balance) {
             return back()
                 ->withErrors(['amount' => 'El abono no puede superar el saldo pendiente.'])
                 ->withInput();
@@ -51,24 +51,22 @@ class PaymentController extends Controller
 
         // 5) Persistir en transacción
         DB::transaction(function () use ($credit, $amountClean, $request) {
-            // Crear pago
             Payment::create([
-                'credit_id'    => $credit->id,
-                'amount'       => $amountClean,           // entero en Gs.
-                'payment_date' => $request->payment_date, // yyyy-mm-dd
-                'method'       => $request->method,       // opcional
-                'reference'    => $request->reference,    // opcional
-                'note'         => $request->note,         // opcional
+            'credit_id'    => $credit->id,
+            'user_id'      => auth()->id(),
+            'amount'       => $amountClean,
+            'payment_date' => $request->payment_date,
+            'method'       => $request->method,
+            'reference'    => $request->reference,
+            'note'         => $request->note,
             ]);
 
-            // Actualizar saldo y estado
-            $credit->balance = max(0, (int) $credit->balance - $amountClean);
-            if ($credit->balance === 0) {
+            $credit->balance = max(0, (int) $credit->balance - (int) $amountClean);
+            if ((int) $credit->balance === 0) {
                 $credit->status = 'pagado';
             }
             $credit->save();
 
-            // Recalcular agregados si existe el método
             if (method_exists($credit, 'refreshAggregates')) {
                 $credit->refreshAggregates();
             }
@@ -78,4 +76,5 @@ class PaymentController extends Controller
             ->route('credits.show', $credit)
             ->with('ok', '✅ Pago registrado correctamente.');
     }
+
 }

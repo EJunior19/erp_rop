@@ -39,7 +39,7 @@ class Payable extends Model
 
     public function payments()
     {
-        return $this->hasMany(PayablePayment::class);
+        return $this->hasMany(\App\Models\PayablePayment::class, 'payable_id');
     }
 
     // 🧷 Accesos "rápidos" usando relaciones ya existentes

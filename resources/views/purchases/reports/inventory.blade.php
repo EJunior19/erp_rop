@@ -59,7 +59,7 @@
       <tbody class="divide-y divide-zinc-800 text-zinc-200">
         @forelse($movements as $m)
           @php
-            $qty = $m->qty ?? $m->quantity ?? 0;
+            $qty = $m->qty ?? $m->qty ?? 0;
             $type = strtolower((string)($m->type ?? ''));
             $badge = $type === 'entrada'
               ? 'bg-emerald-600/20 text-emerald-300 border-emerald-500/40'

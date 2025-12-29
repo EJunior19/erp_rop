@@ -66,7 +66,7 @@ class PurchaseReceiptController extends Controller
                                               ->orderBy('id'),
                 ])
                 // Según tu flujo, recepcionar tiene sentido en estos estados
-                ->whereIn('status', ['borrador','enviado','recibido'])
+                ->whereIn('status', ['borrador','enviado','parcial'])
                 ->findOrFail($orderId);
         }
 
@@ -193,7 +193,7 @@ class PurchaseReceiptController extends Controller
      * y mantener solo las rutas hacia ese controlador.
      */
     public function approve(PurchaseReceipt $purchase_receipt)
-{
+{       
     if ($purchase_receipt->status !== 'pendiente_aprobacion') {
         return back()->with('error', 'La recepción no está pendiente de aprobación');
     }
@@ -218,57 +218,62 @@ class PurchaseReceiptController extends Controller
             'approved_at' => now(),
         ]);
 
-        // 3️⃣ Verificar si la OC está completamente recibida
-        $order = $purchase_receipt->order;
+            // 3️⃣ Verificar si la OC está completamente recibida (query fresca)
+$order = $purchase_receipt->order;
 
-        $orderedByProduct = $order->items
-            ->groupBy('product_id')
-            ->map(fn ($g) => $g->sum('quantity'));
+// cantidades pedidas
+$orderedByProduct = $order->items
+    ->groupBy('product_id')
+    ->map(fn ($g) => (int) $g->sum('quantity'));
 
-        $receivedByProduct = collect();
+// cantidades recibidas (solo recepciones aprobadas) -> desde BD
+$receivedRows = DB::table('purchase_receipt_items as pri')
+    ->join('purchase_receipts as pr', 'pr.id', '=', 'pri.purchase_receipt_id')
+    ->where('pr.purchase_order_id', $order->id)
+    ->where('pr.status', 'aprobado')
+    ->groupBy('pri.product_id')
+    ->selectRaw('pri.product_id, SUM(pri.received_qty) as qty')
+    ->get();
 
-        foreach ($order->receipts->where('status', 'aprobado') as $receipt) {
-            foreach ($receipt->items as $ritem) {
-                $receivedByProduct[$ritem->product_id] =
-                    ($receivedByProduct[$ritem->product_id] ?? 0) + $ritem->received_qty;
-            }
-        }
+$receivedByProduct = $receivedRows->pluck('qty', 'product_id')->map(fn($v)=> (int)$v);
 
-        $fullyReceived = true;
+// determinar estado
+$fullyReceived = true;
+$hasAnyReceived = false;
 
-        foreach ($orderedByProduct as $productId => $orderedQty) {
-            if (($receivedByProduct[$productId] ?? 0) < $orderedQty) {
-                $fullyReceived = false;
-                break;
-            }
-        }
-
-        // 4️⃣ Si todo fue recibido → marcar OC como recibida
-        if ($fullyReceived) {
-            $order->update([
-                'status' => 'recibido',
-            ]);
-        }
-    });
-
-    return back()->with('success', 'Recepción aprobada correctamente.');
+foreach ($orderedByProduct as $productId => $orderedQty) {
+    $rec = (int) ($receivedByProduct[$productId] ?? 0);
+    if ($rec > 0) $hasAnyReceived = true;
+    if ($rec < (int)$orderedQty) { $fullyReceived = false; }
 }
 
-    /**
-     * Rechazar recepción (sin afectar stock).
-     */
-    public function reject(PurchaseReceipt $purchase_receipt)
-    {
-        if ($purchase_receipt->status !== 'pendiente_aprobacion') {
-            return back()->with('error', 'La recepción no está pendiente de aprobación');
-        }
+// 4️⃣ Actualizar estado OC
+if ($fullyReceived) {
+    $order->update(['status' => 'recibido']);
+} elseif ($hasAnyReceived) {
+    $order->update(['status' => 'parcial']); // 👈 recomendado
+}
 
-        $purchase_receipt->update([
-            'status'      => 'rechazado',
-            'approved_by' => null,
-            'approved_at' => null,
-        ]);
+        });
 
-        return back()->with('success','Recepción rechazada');
+        return back()->with('success', 'Recepción aprobada correctamente.');
     }
-}
+
+        /**
+         * Rechazar recepción (sin afectar stock).
+         */
+        public function reject(PurchaseReceipt $purchase_receipt)
+        {
+            if ($purchase_receipt->status !== 'pendiente_aprobacion') {
+                return back()->with('error', 'La recepción no está pendiente de aprobación');
+            }
+
+            $purchase_receipt->update([
+                'status'      => 'rechazado',
+                'approved_by' => null,
+                'approved_at' => null,
+            ]);
+
+            return back()->with('success','Recepción rechazada');
+        }
+    }

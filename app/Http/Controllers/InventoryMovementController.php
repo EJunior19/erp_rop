@@ -35,20 +35,29 @@ class InventoryMovementController extends Controller
             return back()->withErrors(['quantity' => 'Stock insuficiente.'])->withInput();
         }
 
-        $data['user_id'] = auth()->id();
+        // ✅ Mapear quantity -> qty (columna real)
+        $movementData = [
+            'product_id' => $data['product_id'],
+            'type'       => $data['type'],
+            'qty'        => (int) $data['quantity'],
+            'reason'     => $data['reason'] ?? null,
+            'note'       => null,
+            'ref_type'   => 'adjust', // o 'manual' si preferís
+            'ref_id'     => null,
+            'user_id'    => auth()->id(),
+        ];
 
-        // Crear movimiento
-        $movement = InventoryMovement::create($data);
+        $movement = InventoryMovement::create($movementData);
 
         // Actualizar stock
         if ($data['type'] === 'entrada') {
-            $product->increment('stock', $data['quantity']);
+            $product->increment('stock', $movementData['qty']);
         } else {
-            $product->decrement('stock', $data['quantity']);
+            $product->decrement('stock', $movementData['qty']);
         }
 
         return redirect()->route('inventory.index')
-            ->with('ok', $data['type']==='entrada'
+            ->with('ok', $data['type'] === 'entrada'
                 ? '✅ Entrada registrada y stock actualizado.'
                 : '✅ Salida registrada y stock actualizado.');
     }

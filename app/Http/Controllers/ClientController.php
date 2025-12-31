@@ -11,39 +11,44 @@ use Illuminate\Support\Facades\Schema;
 
 class ClientController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        // Parámetros de búsqueda
-        $q       = request('q');
-        $status  = request('status', 'all'); // all | active | inactive
-        $test    = request('test', 'all');   // all | prod | test
-        $perPage = (int) request('per_page', 25);
-        $perPage = in_array($perPage, [10, 25, 50, 100]) ? $perPage : 25;
+        $q      = trim($request->get('q'));
+        $status = $request->get('status', 'all'); // active/inactive/all
+        $test   = $request->get('test', 'all');   // prod/test/all
+        $per    = (int) $request->get('per_page', 25);
 
-        // Consulta principal
-        $clients = \App\Models\Client::query()
+        $clients = Client::query()
             ->when($q, function ($query) use ($q) {
-                $like = '%' . str_replace(' ', '%', $q) . '%';
-                $query->where(function ($w) use ($like) {
-                    $w->where('name', 'ILIKE', $like)
-                    ->orWhere('email', 'ILIKE', $like)
-                    ->orWhere('phone', 'ILIKE', $like)
-                    ->orWhere('code', 'ILIKE', $like)
-                    ->orWhere('ruc', 'ILIKE', $like);
+                $query->where(function ($w) use ($q) {
+                    $w->where('name', 'ILIKE', "%{$q}%")
+                    ->orWhere('email', 'ILIKE', "%{$q}%")
+                    ->orWhere('phone', 'ILIKE', "%{$q}%")
+                    ->orWhere('code', 'ILIKE', "%{$q}%")
+                    ->orWhere('ruc', 'ILIKE', "%{$q}%");
                 });
             })
-            ->when($status !== 'all', function ($query) use ($status) {
-                $query->where('active', $status === 'active' ? 1 : 0);
-            })
-            ->when($test !== 'all', function ($query) use ($test) {
-                $query->where('is_test', $test === 'test' ? 1 : 0);
-            })
-            ->orderByDesc('id')
-            ->paginate($perPage)
-            ->appends(request()->query()); // Mantiene filtros en la paginación
+            ->when($status === 'active', fn ($qq) => $qq->where('active', true))
+            ->when($status === 'inactive', fn ($qq) => $qq->where('active', false))
+            ->when($test === 'test', fn ($qq) => $qq->where('is_test', true))
+            ->when($test === 'prod', fn ($qq) => $qq->where('is_test', false))
+            ->orderBy('id', 'desc')
+            ->paginate($per)
+            ->withQueryString();
 
-        return view('clients.index', compact('clients'));
-    }
+
+            if ($request->ajax()) {
+                return response()->json([
+                    'tbody' => view('clients._table', compact('clients'))->render(),
+                    'pagination' => view('clients._pagination', compact('clients'))->render(),
+                ]);
+            }
+
+            return view('clients.index', compact('clients'));
+
+                    return view('clients.index', compact('clients'));
+                }
+
     // Papelera (opcional, si usás SoftDeletes)
     public function deleted()
     {

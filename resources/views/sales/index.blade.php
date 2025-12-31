@@ -136,27 +136,98 @@
 
 <x-flash-message />
 
-{{-- FILTROS --}}
-<form method="GET" class="filter-box mb-4">
+{{-- FILTROS (AJAX PRO / no pierde foco) --}}
+<form
+  class="filter-box mb-4"
+  x-data="{
+    q: @js(request('q')),
+    estado: @js(request('estado')),
+    page: Number(@js((int) request('page', 1))),
+    loading: false,
+
+    buildParams(){
+      const p = new URLSearchParams()
+      if (this.q) p.set('q', this.q)
+      if (this.estado) p.set('estado', this.estado)
+      if (this.page && this.page > 1) p.set('page', String(this.page))
+      return p
+    },
+
+    async fetchList(pushState = true){
+      this.loading = true
+      const params = this.buildParams().toString()
+      const url = '{{ route('sales.index') }}' + (params ? ('?' + params) : '')
+
+      if (pushState) history.replaceState(null, '', url)
+
+      const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      const data = await res.json()
+
+      const tbody = document.getElementById('sales-tbody')
+      const pag   = document.getElementById('sales-pagination')
+
+      if (tbody) tbody.innerHTML = data.tbody ?? ''
+      if (pag)   pag.innerHTML   = data.pagination ?? ''
+
+      this.loading = false
+    },
+
+    onFilterChange(){
+      this.page = 1
+      this.fetchList()
+    },
+
+    // 👇 Intercepta clicks en paginación (sin recargar)
+    clickPagination(e){
+      const a = e.target.closest('a')
+      if (!a) return
+      const url = new URL(a.href)
+      const p = Number(url.searchParams.get('page') || 1)
+      e.preventDefault()
+      this.page = p
+      this.fetchList()
+      // opcional: sube al top del scroll de la tabla
+      const box = document.getElementById('sales-scrollbox')
+      if (box) box.scrollTop = 0
+    }
+  }"
+  @submit.prevent="onFilterChange()"
+>
   <div class="grid md:grid-cols-12 gap-3 items-end">
     <div class="md:col-span-6">
       <label class="label">Búsqueda</label>
-      <input class="inp" type="text" name="q" value="{{ request('q') }}" placeholder="🔎 Cliente, código, nota, #ID…" />
+      <input
+        class="inp"
+        type="text"
+        x-model="q"
+        @input.debounce.500ms="onFilterChange()"
+        placeholder="🔎 Cliente, código, nota, #ID…"
+      />
     </div>
 
     <div class="md:col-span-3">
       <label class="label">Estado</label>
-      <select name="estado" class="sel">
+      <select class="sel" x-model="estado" @change="onFilterChange()">
         <option value="">— Todos —</option>
         @foreach(['pendiente','aprobado','rechazado','anulado'] as $e)
-          <option value="{{ $e }}" @selected(request('estado')===$e)>{{ ucfirst($e) }}</option>
+          <option value="{{ $e }}">{{ ucfirst($e) }}</option>
         @endforeach
       </select>
     </div>
 
     <div class="md:col-span-3 flex gap-2">
-      <button class="px-4 py-2 rounded-lg bg-emerald-600 text-white">Filtrar</button>
-      <a href="{{ route('sales.index') }}" class="px-4 py-2 rounded-lg border border-zinc-600 text-zinc-300">Limpiar</a>
+      <button type="submit" class="px-4 py-2 rounded-lg bg-emerald-600 text-white">
+        <span x-show="!loading">Filtrar</span>
+        <span x-show="loading">⏳</span>
+      </button>
+
+      <button
+        type="button"
+        class="px-4 py-2 rounded-lg border border-zinc-600 text-zinc-300"
+        @click="q=''; estado=''; page=1; fetchList()"
+      >
+        Limpiar
+      </button>
     </div>
   </div>
 </form>
@@ -165,8 +236,7 @@
 <div class="table-wrap">
 
   {{-- 🔥 SCROLL SOLO DE LA TABLA --}}
-  <div class="max-h-[65vh] overflow-y-auto">
-
+  <div id="sales-scrollbox" class="max-h-[65vh] overflow-y-auto">
     <div class="overflow-x-auto tbl-sticky">
       <table class="min-w-full text-sm">
         <thead>
@@ -183,7 +253,7 @@
           </tr>
         </thead>
 
-        <tbody class="divide-y divide-zinc-800 text-zinc-200">
+        <tbody id="sales-tbody" class="divide-y divide-zinc-800 text-zinc-200">
           @forelse($sales as $s)
             @php
               $gravadas = (int)($s->gravada_10 ?? 0) + (int)($s->gravada_5 ?? 0) + (int)($s->exento ?? 0);
@@ -217,11 +287,15 @@
         </tbody>
       </table>
     </div>
-
   </div>
 
   {{-- PAGINACIÓN (FIJA) --}}
-  <div class="p-4 border-t border-zinc-800 flex justify-between items-center">
+  <div
+    id="sales-pagination"
+    class="p-4 border-t border-zinc-800 flex justify-between items-center"
+    x-data
+    @click.prevent.stop="$root.__x && $root.__x.$data ? $root.__x.$data.clickPagination($event) : null"
+  >
     <div class="text-xs text-zinc-400">
       Mostrando {{ $sales->firstItem() ?? 0 }} a {{ $sales->lastItem() ?? 0 }} de {{ $sales->total() }}
     </div>

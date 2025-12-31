@@ -37,6 +37,14 @@ class SaleController extends Controller
             ->latest()
             ->paginate(10);
 
+            if ($request->ajax()) {
+                return response()->json([
+                    'tbody' => view('sales._table', compact('sales'))->render(),
+                    'pagination' => view('sales._pagination', compact('sales'))->render(),
+                ]);
+            }
+
+
         return view('sales.index', compact('sales'));
     }
 

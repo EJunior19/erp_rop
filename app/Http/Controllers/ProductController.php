@@ -32,14 +32,33 @@ class ProductController extends Controller
      * VISTAS CRUD
      * ======================= */
 
-    public function index()
-    {
-        $products = Product::with(['brand','category','supplier','installments','coverImage'])
-            ->latest()
-            ->paginate(15);
+    public function index(Request $request)
+{
+    $q = trim($request->get('q'));
 
-        return view('products.index', compact('products'));
-    }
+    $products = Product::with(['brand','category','supplier'])
+        ->when($q, function ($query) use ($q) {
+            $query->where(function ($q2) use ($q) {
+                $q2->where('code', 'ILIKE', "%{$q}%")
+                   ->orWhere('name', 'ILIKE', "%{$q}%")
+                   ->orWhereHas('brand', function ($b) use ($q) {
+                       $b->where('name', 'ILIKE', "%{$q}%");
+                   })
+                   ->orWhereHas('category', function ($c) use ($q) {
+                       $c->where('name', 'ILIKE', "%{$q}%");
+                   })
+                   ->orWhereHas('supplier', function ($s) use ($q) {
+                       $s->where('name', 'ILIKE', "%{$q}%");
+                   });
+            });
+        })
+        ->orderBy('id', 'desc')
+        ->paginate(15)
+        ->withQueryString(); // 👈 mantiene ?q= en la paginación
+
+    return view('products.index', compact('products'));
+}
+
 
     public function create()
     {

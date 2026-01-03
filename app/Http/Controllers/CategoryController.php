@@ -8,9 +8,21 @@ use Illuminate\Http\Request;
 class CategoryController extends Controller
 {
     /** Listado (excluye soft-deleted por defecto) */
-    public function index()
+    public function index(Request $request)
     {
-        $categories = Category::latest('id')->paginate(12);
+        $q = trim((string) $request->query('q', ''));
+
+        $categories = Category::query()
+            ->when($q !== '', function ($query) use ($q) {
+                $query->where(function ($sub) use ($q) {
+                    $sub->where('name', 'ilike', "%{$q}%")
+                        ->orWhere('code', 'ilike', "%{$q}%");
+                });
+            })
+            ->latest('id')
+            ->paginate(12)
+            ->withQueryString();
+
         return view('categories.index', compact('categories'));
     }
 

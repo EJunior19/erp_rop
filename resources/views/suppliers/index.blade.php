@@ -23,7 +23,22 @@
 
   {{-- Filtros / Búsqueda --}}
   <div class="bg-gray-900 text-white rounded-xl shadow-2xl border-2 border-green-400 mb-4">
-    <form method="GET" action="{{ route('suppliers.index') }}" class="p-4">
+    <form method="GET" action="{{ route('suppliers.index') }}" class="p-4"
+          x-data
+          x-init="
+            $nextTick(() => {
+              const input = document.getElementById('q');
+              if (!input) return;
+
+              // ✅ Auto-focus al recargar
+              input.focus({ preventScroll: true });
+
+              // ✅ Cursor al final (ideal si ya hay texto)
+              const v = input.value || '';
+              input.setSelectionRange(v.length, v.length);
+            })
+          "
+    >
       <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
         {{-- Búsqueda libre --}}
         <div class="md:col-span-6">

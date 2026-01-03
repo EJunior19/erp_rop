@@ -18,32 +18,30 @@ class SaleController extends Controller
      * =============================== */
     public function index(Request $request)
     {
-        $q      = $request->q;
-        $status = $request->status; // <- usar status (coincide con la DB)
+        $q      = trim((string) $request->query('q', ''));
+        $estado = $request->query('estado'); // 👈 mismo nombre que la vista
 
         $sales = Sale::with('client')
-            ->when($q, function ($query, $q) {
+            ->when($q !== '', function ($query) use ($q) {
                 $query->where(function ($sub) use ($q) {
                     $sub->whereHas('client', fn ($c) => $c->where('name', 'like', "%{$q}%"))
                         ->orWhere('nota', 'like', "%{$q}%");
 
-                    // Si q es número, permite buscar por ID exacto
-                    if (ctype_digit((string) $q)) {
+                    if (ctype_digit($q)) {
                         $sub->orWhere('id', (int) $q);
                     }
                 });
             })
-            ->when($status, fn ($query) => $query->where('status', $status))
+            ->when($estado, fn ($query) => $query->where('status', $estado)) // 👈 columna DB: status
             ->latest()
             ->paginate(10);
 
-            if ($request->ajax()) {
-                return response()->json([
-                    'tbody' => view('sales._table', compact('sales'))->render(),
-                    'pagination' => view('sales._pagination', compact('sales'))->render(),
-                ]);
-            }
-
+        if ($request->ajax()) {
+            return response()->json([
+                'tbody'      => view('sales._tbody', compact('sales'))->render(),      // 👈 existe
+                'pagination' => view('sales._pagination', compact('sales'))->render(), // 👈 existe
+            ]);
+        }
 
         return view('sales.index', compact('sales'));
     }

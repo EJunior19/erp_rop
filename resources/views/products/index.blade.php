@@ -8,6 +8,7 @@
   {{-- Botón para crear nuevo producto --}}
   <x-create-button route="{{ route('products.create') }}" text="Nuevo producto" />
 </div>
+
 {{-- Buscador PRO --}}
 <div 
   x-data="{
@@ -20,12 +21,23 @@
       window.location = '{{ route('products.index') }}?' + params.toString()
     }
   }"
+  x-init="
+    // 🔥 AUTO-FOCUS al recargar (y cursor al final)
+    $nextTick(() => {
+      if ($refs.search) {
+        $refs.search.focus()
+        const v = $refs.search.value || ''
+        $refs.search.setSelectionRange(v.length, v.length)
+      }
+    })
+  "
   class="mb-4"
 >
   <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
 
     {{-- Input búsqueda --}}
     <input
+      x-ref="search"
       type="text"
       placeholder="🔍 Buscar por código, nombre, marca…"
       x-model="q"
@@ -60,7 +72,6 @@
     </div>
   </template>
 </div>
-
 
 {{-- Mensajes flash --}}
 <x-flash-message />

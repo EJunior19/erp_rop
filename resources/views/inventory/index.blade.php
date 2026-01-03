@@ -1,4 +1,3 @@
-{{-- resources/views/inventory/index.blade.php --}}
 @extends('layout.admin')
 
 @section('content')
@@ -31,62 +30,94 @@
 
 <x-flash-message />
 
-{{-- ================= FILTROS ================= --}}
-@php
-  $q     = request('q', '');
-  $type  = request('type', '');
-  $from  = request('from', '');
-  $to    = request('to', '');
-@endphp
+{{-- ================= FILTROS REALTIME ================= --}}
+<div
+  x-data="{
+    q: '{{ request('q') }}',
+    type: '{{ request('type') }}',
+    from: '{{ request('from') }}',
+    to: '{{ request('to') }}',
+    submit() {
+      const params = new URLSearchParams()
+      if (this.q) params.set('q', this.q)
+      if (this.type) params.set('type', this.type)
+      if (this.from) params.set('from', this.from)
+      if (this.to) params.set('to', this.to)
 
-<form method="GET"
-      class="bg-gray-950 rounded-xl border border-gray-800/60 shadow-lg p-4 mb-4">
+      window.location = '{{ route('inventory.index') }}?' + params.toString()
+    }
+  }"
+  class="bg-gray-950 rounded-xl border border-gray-800/60 shadow-lg p-4 mb-4"
+>
+
   <div class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
 
+    {{-- Buscar --}}
     <div class="md:col-span-2">
-      <label class="block text-xs font-semibold uppercase text-gray-400 mb-1">Buscar</label>
-      <input type="text" name="q" value="{{ $q }}"
-             placeholder="Producto, razón, usuario…"
-             class="w-full rounded-lg bg-gray-900 border border-gray-700 text-white px-3 py-2 focus:ring-emerald-600/40">
+      <label class="block text-xs font-semibold uppercase text-gray-400 mb-1">
+        Buscar
+      </label>
+      <input
+        type="text"
+        placeholder="Producto, razón, usuario…"
+        x-model="q"
+        x-init="$el.focus()"
+        @input.debounce.500ms="submit"
+        class="w-full rounded-lg bg-gray-900 border border-gray-700 text-white px-3 py-2
+               focus:ring-emerald-600/40 focus:outline-none"
+      >
     </div>
 
+    {{-- Tipo --}}
     <div>
       <label class="block text-xs font-semibold uppercase text-gray-400 mb-1">Tipo</label>
-      <select name="type"
-              class="w-full rounded-lg bg-gray-900 border border-gray-700 text-white px-3 py-2">
+      <select
+        x-model="type"
+        @change="submit"
+        class="w-full rounded-lg bg-gray-900 border border-gray-700 text-white px-3 py-2"
+      >
         <option value="">Todos</option>
-        <option value="entrada" @selected($type==='entrada')>Entrada</option>
-        <option value="salida"  @selected($type==='salida')>Salida</option>
-        <option value="ajuste"  @selected($type==='ajuste')>Ajuste</option>
+        <option value="entrada">Entrada</option>
+        <option value="salida">Salida</option>
+        <option value="ajuste">Ajuste</option>
       </select>
     </div>
 
+    {{-- Desde --}}
     <div>
       <label class="block text-xs font-semibold uppercase text-gray-400 mb-1">Desde</label>
-      <input type="date" name="from" value="{{ $from }}"
-             class="w-full rounded-lg bg-gray-900 border border-gray-700 text-white px-3 py-2">
+      <input
+        type="date"
+        x-model="from"
+        @change="submit"
+        class="w-full rounded-lg bg-gray-900 border border-gray-700 text-white px-3 py-2"
+      >
     </div>
 
+    {{-- Hasta --}}
     <div>
       <label class="block text-xs font-semibold uppercase text-gray-400 mb-1">Hasta</label>
-      <input type="date" name="to" value="{{ $to }}"
-             class="w-full rounded-lg bg-gray-900 border border-gray-700 text-white px-3 py-2">
+      <input
+        type="date"
+        x-model="to"
+        @change="submit"
+        class="w-full rounded-lg bg-gray-900 border border-gray-700 text-white px-3 py-2"
+      >
     </div>
 
   </div>
 
+  {{-- Acciones --}}
   <div class="flex flex-wrap gap-2 mt-4">
-    <button class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">
-      🔎 Buscar
-    </button>
-
     <a href="{{ route('inventory.index') }}"
        class="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200">
       ✖ Limpiar
     </a>
 
-    <a href="{{ route('inventory.index', array_merge(request()->query(), ['export'=>'csv'])) }}"
-       class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-semibold">
+    <a
+      :href="'{{ route('inventory.index') }}?' + new URLSearchParams({ q, type, from, to, export: 'csv' })"
+      class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-semibold"
+    >
       📤 Exportar CSV
     </a>
 
@@ -96,9 +127,9 @@
       </span>
     </div>
   </div>
-</form>
+</div>
 
-{{-- ================= TABLA (SOLO ESTO SCROLLEA) ================= --}}
+{{-- ================= TABLA ================= --}}
 <div class="bg-gray-950 rounded-xl shadow-lg border border-gray-800/60 overflow-hidden">
 
   <div class="max-h-[65vh] overflow-y-auto">

@@ -104,11 +104,15 @@
     'credito'  => ['label'=>'Crédito',  'class'=>'badge-indigo'],
     'tarjeta'  => ['label'=>'Tarjeta',  'class'=>'badge-amber'],
   ];
+
+  // 👇 IMPORTANTE: esto debe corresponder a tu columna real en DB (status)
   $badgeEstado = [
-    'pendiente'=> ['label'=>'Pendiente', 'class'=>'badge-amber'],
-    'aprobado' => ['label'=>'Aprobado',  'class'=>'badge-emerald'],
-    'rechazado'=> ['label'=>'Rechazado', 'class'=>'badge-red'],
-    'anulado'  => ['label'=>'Anulado',   'class'=>'badge-slate'],
+    'pendiente_aprobacion' => ['label'=>'Pendiente', 'class'=>'badge-amber'],
+    'pendiente'            => ['label'=>'Pendiente', 'class'=>'badge-amber'],
+    'aprobado'             => ['label'=>'Aprobado',  'class'=>'badge-emerald'],
+    'rechazado'            => ['label'=>'Rechazado', 'class'=>'badge-red'],
+    'anulado'              => ['label'=>'Anulado',   'class'=>'badge-slate'],
+    'editable'             => ['label'=>'Editable',  'class'=>'badge-indigo'],
   ];
 
   $sumTotal = 0; $sumIva = 0; $sumGrav = 0;
@@ -186,7 +190,6 @@
       e.preventDefault()
       this.page = p
       this.fetchList()
-      // opcional: sube al top del scroll de la tabla
       const box = document.getElementById('sales-scrollbox')
       if (box) box.scrollTop = 0
     }
@@ -209,8 +212,8 @@
       <label class="label">Estado</label>
       <select class="sel" x-model="estado" @change="onFilterChange()">
         <option value="">— Todos —</option>
-        @foreach(['pendiente','aprobado','rechazado','anulado'] as $e)
-          <option value="{{ $e }}">{{ ucfirst($e) }}</option>
+        @foreach(['pendiente','pendiente_aprobacion','aprobado','rechazado','anulado'] as $e)
+          <option value="{{ $e }}">{{ ucfirst(str_replace('_',' ',$e)) }}</option>
         @endforeach
       </select>
     </div>
@@ -234,8 +237,6 @@
 
 {{-- TABLA --}}
 <div class="table-wrap">
-
-  {{-- 🔥 SCROLL SOLO DE LA TABLA --}}
   <div id="sales-scrollbox" class="max-h-[65vh] overflow-y-auto">
     <div class="overflow-x-auto tbl-sticky">
       <table class="min-w-full text-sm">
@@ -257,8 +258,14 @@
           @forelse($sales as $s)
             @php
               $gravadas = (int)($s->gravada_10 ?? 0) + (int)($s->gravada_5 ?? 0) + (int)($s->exento ?? 0);
-              $modoCfg = $badgeModo[strtolower($s->modo_pago ?? '')] ?? ['label'=>$s->modo_pago,'class'=>'badge-slate'];
-              $estadoCfg = $badgeEstado[strtolower($s->estado ?? '')] ?? ['label'=>$s->estado,'class'=>'badge-slate'];
+
+              $modoKey = strtolower((string)($s->modo_pago ?? ''));
+              $modoCfg = $badgeModo[$modoKey] ?? ['label'=>($s->modo_pago ?? '—'), 'class'=>'badge-slate'];
+
+              // 👇 AQUÍ: usar status (no estado) si tu DB usa status
+              $statusKey = strtolower((string)($s->status ?? $s->estado ?? ''));
+              $estadoCfg = $badgeEstado[$statusKey] ?? ['label'=>($s->status ?? $s->estado ?? '—'), 'class'=>'badge-slate'];
+
               $fecha = optional($s->fecha)->format('Y-m-d') ?? optional($s->created_at)->format('Y-m-d');
             @endphp
 
@@ -301,6 +308,5 @@
     </div>
     {{ $sales->withQueryString()->links() }}
   </div>
-
 </div>
 @endsection

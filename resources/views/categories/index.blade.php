@@ -11,6 +11,49 @@
   <x-create-button route="{{ route('categories.create') }}" text="Nueva categoría" />
 </div>
 
+{{-- 🔍 Buscador PRO (con autofocus al recargar) --}}
+<div 
+  x-data="{
+    q: '{{ request('q') }}',
+    submit() {
+      const params = new URLSearchParams()
+      if (this.q) params.set('q', this.q)
+      window.location = '{{ route('categories.index') }}?' + params.toString()
+    }
+  }"
+  x-init="
+    $nextTick(() => {
+      if ($refs.search) {
+        $refs.search.focus()
+        const v = $refs.search.value || ''
+        $refs.search.setSelectionRange(v.length, v.length)
+      }
+    })
+  "
+  class="mb-4"
+>
+  <input
+    x-ref="search"
+    type="text"
+    placeholder="🔍 Buscar categoría por nombre o código…"
+    x-model="q"
+    @input.debounce.500ms="submit"
+    class="w-full md:w-1/2 rounded-lg bg-slate-800 border border-slate-600
+           text-slate-100 placeholder-slate-400 px-4 py-2
+           focus:outline-none focus:ring-2 focus:ring-emerald-500"
+  />
+
+  {{-- Limpiar --}}
+  <template x-if="q">
+    <div class="mt-2 text-right">
+      <a href="{{ route('categories.index') }}"
+         class="text-sm text-slate-400 hover:text-emerald-400 transition">
+        Limpiar búsqueda ✖
+      </a>
+    </div>
+  </template>
+</div>
+
 {{-- Mensajes flash --}}
 <x-flash-message />
 

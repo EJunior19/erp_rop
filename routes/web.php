@@ -2,6 +2,8 @@
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 
 /**
  * Controladores
@@ -32,7 +34,6 @@ use App\Http\Controllers\ClientReferenceController;
 use App\Http\Controllers\ContactDashboardController;
 use App\Http\Controllers\CatalogController;
 
-
 // Nuevo módulo de Compras
 use App\Http\Controllers\PurchaseOrderController;
 use App\Http\Controllers\PurchaseReceiptController;
@@ -43,7 +44,6 @@ use App\Http\Controllers\PurchaseInvoiceController;
 use App\Http\Controllers\ProductImageController;
 use App\Http\Controllers\PayablePaymentController;
 use App\Http\Controllers\PayableController; // si todavía no lo creaste, lo vamos a usar
-
 
 use App\Models\Client;
 use App\Models\Invoice;
@@ -61,6 +61,35 @@ Route::get('/', fn () => redirect('/login'));
 
 // Logout solo autenticado
 Route::middleware('auth')->post('/logout', [AuthController::class, 'logout'])->name('logout');
+
+/**
+ * ✅ Forzar cambio de contraseña (primer login)
+ * (Estas rutas deben existir porque el middleware force.password redirige acá)
+ */
+Route::middleware('auth')->get('/cambiar-contrasenha', function () {
+    return view('auth.force-password');
+})->name('password.force.edit');
+
+Route::middleware('auth')->post('/cambiar-contrasenha', function (Request $request) {
+
+    $request->validate([
+        'current_password' => ['required'],
+        'password' => ['required', 'min:8', 'confirmed'],
+    ]);
+
+    $user = $request->user();
+
+    if (!Hash::check($request->current_password, $user->password)) {
+        return back()->withErrors(['current_password' => 'La contraseña actual no coincide.']);
+    }
+
+    $user->password = Hash::make($request->password);
+    $user->must_change_password = false;
+    $user->temp_password_expires_at = null;
+    $user->save();
+
+    return redirect()->route('dashboard.index')->with('success', 'Contraseña actualizada ✅');
+})->name('password.force.update');
 
 /**
  * API pública (JSON)
@@ -81,9 +110,9 @@ Route::prefix('api')->group(function () {
 });
 
 /**
- * Rutas protegidas (auth)
+ * Rutas protegidas (auth + force.password)
  */
-Route::middleware('auth')->group(function () {
+Route::middleware(['auth','force.password'])->group(function () {
 
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard.index');
@@ -176,8 +205,8 @@ Route::middleware('auth')->group(function () {
     Route::delete('/clients/{client}/documents/{doc}', [ClientDocumentController::class, 'destroy'])->name('clients.documents.destroy');
 
     // Referencias de clientes
-    Route::post('/clients/{client}/references',               [ClientReferenceController::class, 'store'])->name('clients.references.store');
-    Route::delete('/clients/{client}/references/{reference}', [ClientReferenceController::class, 'destroy'])->name('clients.references.destroy');
+    Route::post('/clients/{client}/references',                [ClientReferenceController::class, 'store'])->name('clients.references.store');
+    Route::delete('/clients/{client}/references/{reference}',  [ClientReferenceController::class, 'destroy'])->name('clients.references.destroy');
 
     // Ventas + aprobaciones
     Route::post('/sales/{sale}/approve', [SaleApprovalController::class,'approve'])->name('sales.approve');
@@ -204,17 +233,17 @@ Route::middleware('auth')->group(function () {
 
     // Sub-recursos de proveedores
     Route::prefix('suppliers/{supplier}')->name('suppliers.')->group(function () {
-        Route::post('/addresses',                 [SupplierController::class, 'storeAddress'])->name('addresses.store');
-        Route::delete('/addresses/{address}',     [SupplierController::class, 'destroyAddress'])->name('addresses.destroy');
+        Route::post('/addresses',                  [SupplierController::class, 'storeAddress'])->name('addresses.store');
+        Route::delete('/addresses/{address}',      [SupplierController::class, 'destroyAddress'])->name('addresses.destroy');
         Route::post('/addresses/{address}/primary',[SupplierController::class, 'setPrimaryAddress'])->name('addresses.primary');
 
         Route::post('/phones',                 [SupplierController::class, 'storePhone'])->name('phones.store');
         Route::delete('/phones/{phone}',       [SupplierController::class, 'destroyPhone'])->name('phones.destroy');
         Route::post('/phones/{phone}/primary', [SupplierController::class, 'setPrimaryPhone'])->name('phones.primary');
 
-        Route::post('/emails',                [SupplierController::class, 'storeEmail'])->name('emails.store');
-        Route::delete('/emails/{email}',      [SupplierController::class, 'destroyEmail'])->name('emails.destroy');
-        Route::post('/emails/{email}/default',[SupplierController::class, 'setDefaultEmail'])->name('emails.default');
+        Route::post('/emails',                 [SupplierController::class, 'storeEmail'])->name('emails.store');
+        Route::delete('/emails/{email}',       [SupplierController::class, 'destroyEmail'])->name('emails.destroy');
+        Route::post('/emails/{email}/default', [SupplierController::class, 'setDefaultEmail'])->name('emails.default');
     });
 
     // Inventario (movimientos)
@@ -270,26 +299,20 @@ Route::middleware('auth')->group(function () {
     /**
      * NUEVO MÓDULO DE COMPRAS
      */
-    Route::resource('purchase_orders',   PurchaseOrderController::class);
+    Route::resource('purchase_orders', PurchaseOrderController::class);
 
     Route::resource('purchase_receipts', PurchaseReceiptController::class)
         ->only(['index','create','store','show']);
 
-    Route::post(
-        'purchase_receipts/{receipt}/approve',
-        [PurchaseApprovalController::class,'approve']
-    )->name('purchase_receipts.approve');
+    Route::post('purchase_receipts/{receipt}/approve', [PurchaseApprovalController::class,'approve'])
+        ->name('purchase_receipts.approve');
 
-    Route::post(
-        'purchase_receipts/{receipt}/reject',
-        [PurchaseApprovalController::class,'reject']
-    )->name('purchase_receipts.reject');
+    Route::post('purchase_receipts/{receipt}/reject', [PurchaseApprovalController::class,'reject'])
+        ->name('purchase_receipts.reject');
 
     // 🧾 Ticket chico de recepción (impresión interna)
-    Route::get(
-        'purchase_receipts/{purchase_receipt}/ticket',
-        [PurchaseReceiptController::class, 'ticket']
-    )->name('purchase_receipts.ticket');
+    Route::get('purchase_receipts/{purchase_receipt}/ticket', [PurchaseReceiptController::class, 'ticket'])
+        ->name('purchase_receipts.ticket');
 
     /**
      * CUENTAS POR PAGAR
@@ -297,38 +320,26 @@ Route::middleware('auth')->group(function () {
     Route::resource('payables', PayableController::class)
         ->only(['index','show']);
 
-    Route::post(
-        'payables/{payable}/payments',
-        [PayablePaymentController::class, 'store']
-    )->name('payables.payments.store');
+    Route::post('payables/{payable}/payments', [PayablePaymentController::class, 'store'])
+        ->name('payables.payments.store');
 
     // Acciones de estado OC
-    Route::post(
-        'purchase_orders/{purchase_order}/send',
-        [PurchaseOrderController::class,'send']
-    )->name('purchase_orders.send');
+    Route::post('purchase_orders/{purchase_order}/send', [PurchaseOrderController::class,'send'])
+        ->name('purchase_orders.send');
 
-    Route::post(
-        'purchase_orders/{purchase_order}/close',
-        [PurchaseOrderController::class,'close']
-    )->name('purchase_orders.close');
+    Route::post('purchase_orders/{purchase_order}/close', [PurchaseOrderController::class,'close'])
+        ->name('purchase_orders.close');
 
-        Route::post(
-        'purchase_orders/{purchase_order}/reopen',
-        [PurchaseOrderController::class,'reopen']
-    )->name('purchase_orders.reopen');
+    Route::post('purchase_orders/{purchase_order}/reopen', [PurchaseOrderController::class,'reopen'])
+        ->name('purchase_orders.reopen');
 
- 
+    // ✅ Catálogo tipo ecommerce (ERP)
+    Route::get('/catalogo', [CatalogController::class, 'index'])
+        ->name('catalog.index');
 
-// ✅ Catálogo tipo ecommerce (ERP)
-Route::get('/catalogo', [CatalogController::class, 'index'])
-    ->name('catalog.index');
+    // ✅ Vista Ecommerce (si querés que abra el catálogo real del ERP)
+    Route::get('/vista-ecommerce', function () {
+        return view('catalog.iframe');
+    })->name('ecommerce.vista');
 
-// ✅ Vista Ecommerce (si querés que abra el catálogo real del ERP)
-Route::get('/vista-ecommerce', function () {
-    return view('catalog.iframe');
-})->name('ecommerce.vista');
-
-
-
-}); // 👈 cierre del middleware('auth')
+}); // 👈 cierre del middleware(['auth','force.password'])

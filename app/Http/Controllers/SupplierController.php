@@ -17,33 +17,81 @@ use App\Models\SupplierEmail;
 class SupplierController extends Controller
 {
     /** Listado */
-    public function index()
-    {
-        $suppliers = \App\Models\Supplier::query()
-            ->select('suppliers.*')
-            // Email principal (prioriza tipo 'compras', luego default)
-            ->selectSub("
-                SELECT e.email
-                FROM supplier_emails e
-                WHERE e.supplier_id = suppliers.id
-                AND (e.is_active IS TRUE OR e.is_active IS NULL)
-                ORDER BY (e.type = 'compras') DESC, e.is_default DESC, e.id ASC
-                LIMIT 1
-            ", 'email_main')
-            // Teléfono principal
-            ->selectSub("
-                SELECT p.phone_number
-                FROM supplier_phones p
-                WHERE p.supplier_id = suppliers.id
-                AND (p.is_active IS TRUE OR p.is_active IS NULL)
-                ORDER BY p.is_primary DESC, p.id ASC
-                LIMIT 1
-            ", 'phone_main')
-            ->latest('id')
-            ->paginate(12);
+    /** Listado */
+public function index(Request $request)
+{
+    $q      = trim((string) $request->query('q', ''));
+    $active = $request->query('active', ''); // '', '1', '0'
 
-        return view('suppliers.index', compact('suppliers'));
-    }
+    $suppliers = Supplier::query()
+        ->select('suppliers.*')
+
+        // Email principal (prioriza tipo 'compras', luego default)
+        ->selectSub("
+            SELECT e.email
+            FROM supplier_emails e
+            WHERE e.supplier_id = suppliers.id
+              AND (e.is_active IS TRUE OR e.is_active IS NULL)
+            ORDER BY (e.type = 'compras') DESC, e.is_default DESC, e.id ASC
+            LIMIT 1
+        ", 'email_main')
+
+        // Teléfono principal
+        ->selectSub("
+            SELECT p.phone_number
+            FROM supplier_phones p
+            WHERE p.supplier_id = suppliers.id
+              AND (p.is_active IS TRUE OR p.is_active IS NULL)
+            ORDER BY p.is_primary DESC, p.id ASC
+            LIMIT 1
+        ", 'phone_main')
+
+        // ✅ filtro por estado
+        ->when($active !== '' && in_array($active, ['0','1'], true), function ($query) use ($active) {
+            $query->where('suppliers.active', $active === '1');
+        })
+
+        // ✅ búsqueda (Postgres -> ILIKE)
+        ->when($q !== '', function ($query) use ($q) {
+            $needle = "%{$q}%";
+            $query->where(function ($w) use ($needle, $q) {
+                $w->where('suppliers.name', 'ilike', $needle)
+                  ->orWhere('suppliers.code', 'ilike', $needle)
+                  ->orWhere('suppliers.ruc',  'ilike', $needle)
+
+                  // como email_main y phone_main son subselects, no se puede usar where normal;
+                  // usamos whereRaw repitiendo el subselect
+                  ->orWhereRaw("(
+                      SELECT e.email
+                      FROM supplier_emails e
+                      WHERE e.supplier_id = suppliers.id
+                        AND (e.is_active IS TRUE OR e.is_active IS NULL)
+                      ORDER BY (e.type = 'compras') DESC, e.is_default DESC, e.id ASC
+                      LIMIT 1
+                  ) ILIKE ?", [$needle])
+
+                  ->orWhereRaw("(
+                      SELECT p.phone_number
+                      FROM supplier_phones p
+                      WHERE p.supplier_id = suppliers.id
+                        AND (p.is_active IS TRUE OR p.is_active IS NULL)
+                      ORDER BY p.is_primary DESC, p.id ASC
+                      LIMIT 1
+                  ) ILIKE ?", [$needle]);
+
+                // buscar por ID exacto si es número
+                if (ctype_digit((string) $q)) {
+                    $w->orWhere('suppliers.id', (int) $q);
+                }
+            });
+        })
+
+        ->latest('suppliers.id')
+        ->paginate(12)
+        ->withQueryString();
+
+    return view('suppliers.index', compact('suppliers'));
+}
 
     /** Form de creación */
     public function create()

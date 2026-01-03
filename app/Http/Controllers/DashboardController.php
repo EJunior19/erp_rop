@@ -2,108 +2,153 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Client;
-use App\Models\Credit;
-use App\Models\TelegramLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use App\Services\TelegramService;
+use Illuminate\Support\Facades\Schema;
+
+use App\Models\Client;
+use App\Models\Product;
+use App\Models\Sale;
 
 class DashboardController extends Controller
 {
-    public function index(TelegramService $tg)
+    public function index(Request $req)
     {
-        // === Lo que ya tenías, tal cual ===
-        $clientes           = Client::count();
-        $clientesVinculados = Client::whereNotNull('telegram_chat_id')->count();
+        $hoy = now()->toDateString();
 
-        $hoy             = now()->toDateString();
-        $vencidosHoy     = Credit::whereIn('status', ['vencido','overdue'])
-                                ->whereDate('due_date', $hoy)->count();
-        $vencidosTotales = Credit::whereIn('status', ['vencido','overdue'])->count();
-        $vencen3dias     = Credit::whereIn('status', ['pendiente','pending','partial'])
-                                ->whereBetween('due_date', [now(), now()->addDays(3)])->count();
+        // =============================
+        // KPIs PRINCIPALES
+        // =============================
 
-        $msg24h = TelegramLog::where('created_at', '>=', now()->subDay())->count();
-        $err24h = TelegramLog::where('created_at', '>=', now()->subDay())
-                             ->where('status', 'error')->count();
+        // Clientes
+        $clientes = (int) Client::count();
 
-        $ultimosTG = TelegramLog::with('client:id,name')
-                    ->latest()->limit(10)
-                    ->get(['id','client_id','direction','type','status','message','created_at']);
+        // Proveedores (para que NO se rompa tu Blade si lo muestra)
+        $proveedores = Schema::hasTable('suppliers')
+            ? (int) DB::table('suppliers')->count()
+            : 0;
 
-        $ultimosCreditos = Credit::with('client:id,name')
-                    ->latest('updated_at')->limit(10)
-                    ->get(['id','client_id','status','balance','due_date','updated_at']);
+        // Productos
+        $productos = (int) Product::count();
 
-        $wh = app(TelegramService::class)->getWebhookInfo();
-        $webhookOnline = !empty($wh['url']);
+        // Ventas HOY
+        $ventasHoy      = (int) DB::table('sales')->whereDate('created_at', $hoy)->count();
+        $montoVentasHoy = (float) DB::table('sales')->whereDate('created_at', $hoy)->sum('total');
+
+        // Ventas MES
+        $inicioMes      = now()->startOfMonth();
+        $ventasMes      = (int) DB::table('sales')->whereBetween('created_at', [$inicioMes, now()])->count();
+        $montoVentasMes = (float) DB::table('sales')->whereBetween('created_at', [$inicioMes, now()])->sum('total');
+
+        // Pendientes de aprobación
+        $ventasPendientes = (int) DB::table('sales')->where('status', 'pendiente_aprobacion')->count();
+
+        // Stock bajo (NO tenés stock_min, usamos umbral fijo)
+        $stockMin = 5;
+        $stockBajo = (int) DB::table('products')
+            ->where('stock', '<=', $stockMin)
+            ->count();
+
+        // Movimientos últimas 24h
+        $mov24h = Schema::hasTable('inventory_movements')
+            ? (int) DB::table('inventory_movements')->where('created_at', '>=', now()->subDay())->count()
+            : 0;
+
+        // =============================
+        // LISTAS (actividad reciente)
+        // =============================
+
+        // Últimas ventas (cliente + total)
+        $ultimasVentas = DB::table('sales')
+            ->leftJoin('clients', 'clients.id', '=', 'sales.client_id')
+            ->orderByDesc('sales.id')
+            ->limit(10)
+            ->get([
+                'sales.id',
+                'sales.status',
+                'sales.total',
+                'sales.created_at',
+                DB::raw("COALESCE(clients.name,'—') as client_name"),
+            ]);
+
+        // Últimas compras:
+        // Tu tabla purchases NO tiene total. El total real está en purchase_orders.total.
+        $ultimasCompras = collect();
+
+        if (Schema::hasTable('purchase_orders')) {
+            $ultimasCompras = DB::table('purchase_orders')
+                ->leftJoin('suppliers', 'suppliers.id', '=', 'purchase_orders.supplier_id')
+                ->orderByDesc('purchase_orders.id')
+                ->limit(10)
+                ->get([
+                    'purchase_orders.id',
+                    'purchase_orders.total',
+                    'purchase_orders.status',
+                    'purchase_orders.created_at',
+                    DB::raw("COALESCE(suppliers.name,'—') as supplier_name"),
+                ]);
+        }
+
+        // Inventario reciente
+        $ultimosMov = collect();
+        if (Schema::hasTable('inventory_movements')) {
+            $ultimosMov = DB::table('inventory_movements')
+                ->leftJoin('products', 'products.id', '=', 'inventory_movements.product_id')
+                ->leftJoin('users', 'users.id', '=', 'inventory_movements.user_id')
+                ->orderByDesc('inventory_movements.id')
+                ->limit(10)
+                ->get([
+                    'inventory_movements.id',
+                    'inventory_movements.type',
+                    'inventory_movements.qty',
+                    'inventory_movements.reason',
+                    'inventory_movements.created_at',
+                    DB::raw("COALESCE(products.name,'—') as product_name"),
+                    DB::raw("COALESCE(users.name,'Sistema') as user_name"),
+                ]);
+        }
 
         return view('dashboard', compact(
-            'clientes','clientesVinculados',
-            'vencidosHoy','vencidosTotales','vencen3dias',
-            'msg24h','err24h','ultimosTG','ultimosCreditos','webhookOnline'
+            'clientes','proveedores','productos',
+            'ventasHoy','montoVentasHoy',
+            'ventasMes','montoVentasMes',
+            'ventasPendientes',
+            'stockBajo','stockMin',
+            'mov24h',
+            'ultimasVentas','ultimasCompras','ultimosMov',
         ));
     }
 
-    /**
-     * Endpoint JSON que usa la UI (tarjetas, tablas, charts).
-     * Acepta ?from=YYYY-MM-DD&to=YYYY-MM-DD (opcional).
-     */
+    // Endpoint JSON opcional (si querés charts)
     public function stats(Request $req)
     {
         $from = $req->date('from') ?? now()->startOfMonth();
         $to   = $req->date('to')   ?? now();
 
-        // --- KPIs base del ecosistema que ya tenés ---
         $kpis = [
-            'clientes_total'      => (int) Client::count(),
-            'clientes_vinculados' => (int) Client::whereNotNull('telegram_chat_id')->count(),
-            'creditos_vencidos'   => (int) Credit::whereIn('status',['vencido','overdue'])->count(),
-            'creditos_por_vencer' => (int) Credit::whereIn('status',['pendiente','pending','partial'])
-                                        ->whereBetween('due_date', [now(), now()->addDays(7)])->count(),
-            'telegram_24h'        => (int) TelegramLog::where('created_at','>=', now()->subDay())->count(),
-            'telegram_err_24h'    => (int) TelegramLog::where('created_at','>=', now()->subDay())->where('status','error')->count(),
-            // Suma de saldos (CxC) para tener un total global
-            'cxc_saldo'           => (float) Credit::sum('balance'),
+            'clientes_total'  => (int) DB::table('clients')->count(),
+            'ventas_total'    => (int) DB::table('sales')->whereBetween('created_at', [$from, $to])->count(),
+            'ventas_monto'    => (float) DB::table('sales')->whereBetween('created_at', [$from, $to])->sum('total'),
+            'pendientes'      => (int) DB::table('sales')->where('status', 'pendiente_aprobacion')->count(),
+            'stock_bajo'      => (int) DB::table('products')->where('stock', '<=', 5)->count(),
+            'movimientos_24h' => Schema::hasTable('inventory_movements')
+                                ? (int) DB::table('inventory_movements')->where('created_at','>=', now()->subDay())->count()
+                                : 0,
         ];
 
-        // --- Serie: creditos que vencen por día (entre from/to) ---
-        $vencimientos = Credit::selectRaw('DATE(due_date) as fecha, COUNT(*) as cantidad, SUM(balance) as saldo')
-            ->whereBetween('due_date', [$from, $to])
-            ->groupBy('fecha')
+        // Serie ventas por día (Postgres)
+        $ventasPorDia = DB::table('sales')
+            ->selectRaw("DATE(created_at) as fecha, COUNT(*) as cantidad, SUM(total) as total")
+            ->whereBetween('created_at', [$from, $to])
+            ->groupByRaw("DATE(created_at)")
             ->orderBy('fecha')
             ->get();
 
-        // --- Serie: telegram por hora en últimas 24 hs (útil para actividad del bot) ---
-        $desde24 = now()->subDay();
-        $tg24 = TelegramLog::selectRaw("DATE_FORMAT(created_at, '%H:00') as hora, COUNT(*) as n")
-            ->where('created_at', '>=', $desde24)
-            ->groupBy('hora')->orderBy('hora')->get();
-
-        // --- Top clientes por saldo ---
-        $topClientes = Client::select('clients.id','clients.name','clients.ruc')
-            ->leftJoin('credits','credits.client_id','=','clients.id')
-            ->groupBy('clients.id','clients.name','clients.ruc')
-            ->selectRaw('COALESCE(SUM(credits.balance),0) as saldo')
-            ->orderByDesc('saldo')
-            ->limit(10)
-            ->get();
-
-        // --- Estados de créditos (para donut) ---
-        $estados = Credit::selectRaw('status, COUNT(*) as n, SUM(balance) as saldo')
-            ->groupBy('status')
-            ->get();
-
-        // Respuesta
         return response()->json([
-            'kpis'          => $kpis,
-            'vencimientos'  => $vencimientos, // [{fecha, cantidad, saldo}]
-            'telegram24h'   => $tg24,         // [{hora, n}]
-            'topClientes'   => $topClientes,  // [{id,name,ruc,saldo}]
-            'creditosEstado'=> $estados,      // [{status, n, saldo}]
-            'from'          => $from->toDateString(),
-            'to'            => $to->toDateString(),
+            'kpis'      => $kpis,
+            'ventasDia' => $ventasPorDia,
+            'from'      => $from->toDateString(),
+            'to'        => $to->toDateString(),
         ]);
     }
 }

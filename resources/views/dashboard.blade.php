@@ -1,70 +1,55 @@
 @extends('layout.admin')
 @section('content')
 
-<h1 class="text-2xl font-bold text-black-100 mb-4">📊 Panel principal</h1>
+<h1 class="text-2xl font-bold text-white mb-4">📊 Panel principal</h1>
 
-{{-- Tarjetas resumen --}}
+{{-- KPIs --}}
 <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
 
-  {{-- Clientes --}}
-  <div class="bg-gradient-to-br from-blue-600 to-blue-500 text-white rounded-xl shadow p-4">
-    <div class="font-medium">Clientes registrados</div>
-    <div class="text-3xl font-bold">{{ $clientes }}</div>
-    <div class="text-sm mt-3 border-t border-white/20 pt-2 flex items-center justify-between">
-      <a href="{{ route('clients.index') }}" class="hover:underline">Ver clientes</a>
-      <i class="fas fa-users"></i>
-    </div>
-  </div>
-
-  {{-- Clientes vinculados a Telegram --}}
+  {{-- Ventas hoy --}}
   <div class="bg-gradient-to-br from-emerald-600 to-emerald-500 text-white rounded-xl shadow p-4">
-    <div class="font-medium">Clientes vinculados (Telegram)</div>
-    <div class="text-3xl font-bold">{{ $clientesVinculados }}</div>
+    <div class="font-medium">Ventas de hoy</div>
+    <div class="text-3xl font-bold">{{ $ventasHoy }}</div>
     <div class="text-sm mt-3 border-t border-white/20 pt-2 flex items-center justify-between">
-      <a href="{{ route('bot.index') }}" class="hover:underline">Abrir panel del bot</a>
-      <span class="text-xs px-2 py-0.5 rounded bg-black/30">{{ $webhookOnline ? 'Webhook Online' : 'Webhook Offline' }}</span>
+      <a href="{{ route('sales.index') }}" class="hover:underline">Ver ventas</a>
+      <span class="text-xs px-2 py-0.5 rounded bg-black/30">
+        Gs. {{ number_format((int)$montoVentasHoy,0,',','.') }}
+      </span>
     </div>
   </div>
 
-  {{-- Créditos: vencen en 3 días --}}
-  <div class="bg-gradient-to-br from-amber-600 to-amber-500 text-white rounded-xl shadow p-4">
-    <div class="font-medium">Vencen en 3 días</div>
-    <div class="text-3xl font-bold">{{ $vencen3dias }}</div>
+  {{-- Ventas mes --}}
+  <div class="bg-gradient-to-br from-blue-600 to-blue-500 text-white rounded-xl shadow p-4">
+    <div class="font-medium">Ventas del mes</div>
+    <div class="text-3xl font-bold">{{ $ventasMes }}</div>
     <div class="text-sm mt-3 border-t border-white/20 pt-2 flex items-center justify-between">
-      <a href="{{ route('credits.dashboard') }}" class="hover:underline">Panel de créditos</a>
+      <a href="{{ route('sales.index') }}" class="hover:underline">Ver ventas</a>
+      <span class="text-xs px-2 py-0.5 rounded bg-black/30">
+        Gs. {{ number_format((int)$montoVentasMes,0,',','.') }}
+      </span>
+    </div>
+  </div>
+
+  {{-- Pendientes --}}
+  <div class="bg-gradient-to-br from-amber-600 to-amber-500 text-white rounded-xl shadow p-4">
+    <div class="font-medium">Pendientes aprobación</div>
+    <div class="text-3xl font-bold">{{ $ventasPendientes }}</div>
+    <div class="text-sm mt-3 border-t border-white/20 pt-2 flex items-center justify-between">
+      <a href="{{ route('sales.index',['status'=>'pendiente_aprobacion']) }}" class="hover:underline">Ver pendientes</a>
       <i class="fa-solid fa-hourglass-half"></i>
     </div>
   </div>
 
-  {{-- Notificaciones 24h --}}
+  {{-- Stock bajo --}}
   <div class="bg-gradient-to-br from-purple-600 to-purple-500 text-white rounded-xl shadow p-4">
-    <div class="font-medium">Notificaciones 24h</div>
-    <div class="text-3xl font-bold">{{ $msg24h }}</div>
+    <div class="font-medium">Stock bajo (≤ {{ $stockMin }})</div>
+    <div class="text-3xl font-bold">{{ $stockBajo }}</div>
     <div class="text-sm mt-3 border-t border-white/20 pt-2 flex items-center justify-between">
-      <span class="{{ $err24h ? 'text-red-200' : 'text-green-100' }}">
-        {{ $err24h ? ($err24h.' errores') : 'sin errores' }}
-      </span>
-      <i class="fa-solid fa-bell"></i>
+      <a href="{{ route('products.index') }}" class="hover:underline">Ver productos</a>
+      <i class="fa-solid fa-boxes-stacked"></i>
     </div>
   </div>
-</div>
 
-{{-- Segunda fila de KPIs compactos --}}
-<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-  <div class="bg-gray-900 rounded-xl border border-gray-700 p-4">
-    <div class="text-sm text-gray-400">Créditos vencidos (hoy)</div>
-    <div class="text-2xl text-white font-semibold">{{ $vencidosHoy }}</div>
-  </div>
-  <div class="bg-gray-900 rounded-xl border border-gray-700 p-4">
-    <div class="text-sm text-gray-400">Créditos vencidos (total)</div>
-    <div class="text-2xl text-white font-semibold">{{ $vencidosTotales }}</div>
-  </div>
-  <div class="bg-gray-900 rounded-xl border border-gray-700 p-4">
-    <div class="text-sm text-gray-400">Webhook</div>
-    <div class="text-2xl font-semibold {{ $webhookOnline ? 'text-emerald-400' : 'text-red-400' }}">
-      {{ $webhookOnline ? 'Online' : 'Offline' }}
-    </div>
-  </div>
 </div>
 
 {{-- Accesos rápidos --}}
@@ -73,91 +58,110 @@
     ⚡ Accesos rápidos
   </div>
   <div class="p-4 flex flex-wrap gap-2">
-    <x-create-button route="{{ route('clients.create') }}" text="Nuevo cliente" />
-    <a href="{{ route('clients.index') }}" 
-       class="px-3 py-1.5 text-sm border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700 hover:text-white transition">📋 Lista de clientes</a>
-    <a href="{{ route('credits.dashboard') }}" 
-       class="px-3 py-1.5 text-sm border border-emerald-600 text-emerald-300 rounded-lg hover:bg-emerald-700/30 transition">🧮 Panel de créditos</a>
-    <a href="{{ route('bot.index') }}" 
-       class="px-3 py-1.5 text-sm border border-indigo-600 text-indigo-300 rounded-lg hover:bg-indigo-700/30 transition">🤖 Bot de Telegram</a>
+    <a href="{{ route('sales.create') }}" class="px-3 py-1.5 text-sm border border-emerald-600 text-emerald-300 rounded-lg hover:bg-emerald-700/30 transition">➕ Nueva venta</a>
+    <a href="{{ route('purchase_orders.index') }}" class="px-3 py-1.5 text-sm border border-indigo-600 text-indigo-300 rounded-lg hover:bg-indigo-700/30 transition">🧾 Nueva compra</a>
+    <a href="{{ route('inventory.index') }}" class="px-3 py-1.5 text-sm border border-purple-600 text-purple-300 rounded-lg hover:bg-purple-700/30 transition">📦 Movimiento inventario</a>
+    <a href="{{ route('clients.index') }}" class="px-3 py-1.5 text-sm border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700 hover:text-white transition">👥 Clientes</a>
+    <a href="{{ route('suppliers.index') }}" class="px-3 py-1.5 text-sm border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700 hover:text-white transition">🏢 Proveedores</a>
+    <a href="{{ route('products.index') }}" class="px-3 py-1.5 text-sm border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700 hover:text-white transition">📦 Productos</a>
   </div>
 </div>
 
-{{-- Actividad reciente (dos columnas) --}}
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-  {{-- Últimos eventos de Telegram --}}
+{{-- 3 columnas: ventas / compras / inventario --}}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+  {{-- Últimas ventas --}}
   <div class="bg-gray-900 rounded-xl shadow border border-gray-700">
     <div class="px-4 py-2 border-b border-gray-700 font-semibold text-gray-200 flex items-center justify-between">
-      <span>🗒️ Últimos eventos (Telegram)</span>
-      <a href="{{ route('bot.index') }}" class="text-xs text-indigo-300 hover:underline">ver panel</a>
+      <span>🧾 Últimas ventas</span>
+      <a href="{{ route('sales.index') }}" class="text-xs text-emerald-300 hover:underline">ver todo</a>
     </div>
     <div class="p-4 overflow-x-auto">
       <table class="min-w-full text-sm">
         <thead class="text-gray-400">
           <tr>
-            <th class="text-left p-2">Fecha</th>
+            <th class="text-left p-2">#</th>
             <th class="text-left p-2">Cliente</th>
-            <th class="text-left p-2">Dir</th>
-            <th class="text-left p-2">Tipo</th>
-            <th class="text-left p-2">Estado</th>
-            <th class="text-left p-2">Mensaje</th>
+            <th class="text-right p-2">Total</th>
           </tr>
         </thead>
         <tbody>
-          @forelse($ultimosTG as $l)
+          @forelse($ultimasVentas as $v)
           <tr class="border-t border-gray-800">
-            <td class="p-2 text-gray-300">{{ $l->created_at->format('d/m H:i') }}</td>
-            <td class="p-2 text-gray-200">{{ $l->client?->name ?? '—' }}</td>
-            <td class="p-2 text-gray-300">{{ $l->direction }}</td>
-            <td class="p-2 text-gray-300">{{ $l->type ?? '—' }}</td>
-            <td class="p-2 {{ $l->status==='ok'?'text-emerald-400':'text-red-400' }}">{{ $l->status }}</td>
-            <td class="p-2 text-gray-300 truncate max-w-[22rem]">{{ \Illuminate\Support\Str::limit($l->message, 80) }}</td>
+            <td class="p-2 text-gray-300">#{{ $v->id }}</td>
+            <td class="p-2 text-gray-200">{{ $v->client_name }}</td>
+            <td class="p-2 text-right text-gray-200 font-semibold">Gs. {{ number_format((int)$v->total,0,',','.') }}</td>
           </tr>
           @empty
-          <tr><td class="p-3 text-gray-400" colspan="6">Sin eventos recientes.</td></tr>
+          <tr><td class="p-3 text-gray-400" colspan="3">Sin ventas recientes.</td></tr>
           @endforelse
         </tbody>
       </table>
     </div>
   </div>
 
-  {{-- Últimos cambios en créditos --}}
+  {{-- Últimas compras (purchase_orders) --}}
   <div class="bg-gray-900 rounded-xl shadow border border-gray-700">
-    <div class="px-4 py-2 border-b border-gray-700 font-semibold text-gray-200">💳 Últimos cambios de créditos</div>
+    <div class="px-4 py-2 border-b border-gray-700 font-semibold text-gray-200 flex items-center justify-between">
+      <span>🧾 Últimas compras</span>
+      <a href="{{ route('purchase_orders.index') }}" class="text-xs text-indigo-300 hover:underline">ver todo</a>
+    </div>
     <div class="p-4 overflow-x-auto">
       <table class="min-w-full text-sm">
         <thead class="text-gray-400">
           <tr>
-            <th class="text-left p-2">Fecha</th>
-            <th class="text-left p-2">Cliente</th>
-            <th class="text-left p-2">Estado</th>
-            <th class="text-left p-2">Vence</th>
-            <th class="text-left p-2">Saldo</th>
+            <th class="text-left p-2">#</th>
+            <th class="text-left p-2">Proveedor</th>
+            <th class="text-right p-2">Total</th>
           </tr>
         </thead>
         <tbody>
-          @forelse($ultimosCreditos as $c)
+          @forelse($ultimasCompras as $c)
           <tr class="border-t border-gray-800">
-            <td class="p-2 text-gray-300">{{ optional($c->updated_at)->format('d/m H:i') }}</td>
-            <td class="p-2 text-gray-200">{{ $c->client?->name }}</td>
-            <td class="p-2">
-              <span class="px-2 py-0.5 rounded text-xs
-                @if(in_array($c->status,['vencido','overdue'])) bg-red-700 text-white
-                @elseif(in_array($c->status,['pendiente','pending','partial'])) bg-amber-700 text-white
-                @else bg-gray-700 text-gray-200 @endif">
-                {{ ucfirst($c->status) }}
-              </span>
-            </td>
-            <td class="p-2 text-gray-300">{{ optional($c->due_date)->format('d/m/Y') }}</td>
-            <td class="p-2 text-gray-300">Gs. {{ number_format((int)$c->balance,0,',','.') }}</td>
+            <td class="p-2 text-gray-300">#{{ $c->id }}</td>
+            <td class="p-2 text-gray-200">{{ $c->supplier_name }}</td>
+            <td class="p-2 text-right text-gray-200 font-semibold">Gs. {{ number_format((int)$c->total,0,',','.') }}</td>
           </tr>
           @empty
-          <tr><td class="p-3 text-gray-400" colspan="5">Sin cambios recientes.</td></tr>
+          <tr><td class="p-3 text-gray-400" colspan="3">Sin compras recientes.</td></tr>
           @endforelse
         </tbody>
       </table>
     </div>
   </div>
+
+  {{-- Inventario reciente --}}
+  <div class="bg-gray-900 rounded-xl shadow border border-gray-700">
+    <div class="px-4 py-2 border-b border-gray-700 font-semibold text-gray-200 flex items-center justify-between">
+      <span>📦 Inventario reciente</span>
+      <a href="{{ route('inventory.index') }}" class="text-xs text-purple-300 hover:underline">ver todo</a>
+    </div>
+    <div class="p-4 overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="text-gray-400">
+          <tr>
+            <th class="text-left p-2">Fecha</th>
+            <th class="text-left p-2">Producto</th>
+            <th class="text-right p-2">Qty</th>
+          </tr>
+        </thead>
+        <tbody>
+          @forelse($ultimosMov as $m)
+          <tr class="border-t border-gray-800">
+            <td class="p-2 text-gray-300">
+              {{ \Carbon\Carbon::parse($m->created_at)->format('d/m H:i') }}
+            </td>
+            <td class="p-2 text-gray-200">{{ $m->product_name }}</td>
+            <td class="p-2 text-right text-gray-200 font-semibold">{{ (int)$m->qty }}</td>
+          </tr>
+          @empty
+          <tr><td class="p-3 text-gray-400" colspan="3">Sin movimientos recientes.</td></tr>
+          @endforelse
+        </tbody>
+      </table>
+    </div>
+  </div>
+
 </div>
 
 @endsection

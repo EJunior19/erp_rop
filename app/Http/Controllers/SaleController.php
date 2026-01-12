@@ -382,4 +382,29 @@ class SaleController extends Controller
         return redirect()->route('sales.show', $sale)
             ->with('success', 'Estado actualizado correctamente.');
     }
+    use App\Models\Sale;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+public function destroy(Sale $sale)
+{
+    // 🔒 Seguridad extra: si tu sistema tiene roles/permisos, validalo acá
+    // ejemplo: abort_unless(auth()->user()->role_id === 1, 403);
+
+    // ✅ Reglas de negocio: solo permitir borrar si NO está aprobado
+    // (ajustá a tu flujo real)
+    if (in_array($sale->status, ['aprobado'], true)) {
+        return back()->with('error', 'No se puede eliminar una venta aprobada.');
+    }
+
+    DB::transaction(function () use ($sale) {
+        // Si tenés relaciones con ON DELETE CASCADE, esto puede ser suficiente.
+        // Si NO, conviene borrar items manualmente.
+        $sale->items()->delete(); // si existe relación items()
+        $sale->delete();
+    });
+
+    return redirect()->route('sales.index')->with('success', 'Venta eliminada correctamente.');
+}
+
 }

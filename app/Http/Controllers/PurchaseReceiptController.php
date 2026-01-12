@@ -51,112 +51,65 @@ class PurchaseReceiptController extends Controller
      * Si viene ?order=ID, precarga la OC y sus ítems.
      * Soporta ?q= para buscar OCs por número o proveedor.
      */
-    public function create(Request $request)
-    {
-        $orderId = $request->integer('order'); // ?order=ID
-        $q       = trim($request->get('q', '')); // ?q=texto de búsqueda
+public function store(Request $request)
+{
+    $data = $request->validate([
+        'purchase_order_id' => 'required|exists:purchase_orders,id',
+        'receipt_number'    => 'required|string',
+        'received_date'     => 'required|date',
+        'notes'             => 'nullable|string',
+        'items'             => 'required|array|min:1',
+        'items.*.product_id'   => 'required|exists:products,id',
+        'items.*.ordered_qty'  => 'required|integer|min:0',
+        'items.*.received_qty' => 'required|integer|min:0',
 
-        // 1) Selected order (opcional)
-        $selectedOrder = null;
-        if ($orderId) {
-            $selectedOrder = PurchaseOrder::query()
-                ->with([
-                    'supplier:id,name',
-                    'items' => fn ($qi) => $qi->with(['product:id,name,code'])
-                                              ->orderBy('id'),
-                ])
-                // Según tu flujo, recepcionar tiene sentido en estos estados
-                ->whereIn('status', ['borrador','enviado','parcial'])
-                ->findOrFail($orderId);
-        }
+        // ✅ aceptar ambos nombres
+        'items.*.unit_cost'  => 'nullable|numeric|min:0',
+        'items.*.unit_price' => 'nullable|numeric|min:0',
 
-        // 2) Listado de OCs disponibles para seleccionar (combo)
-        $ordersQuery = PurchaseOrder::query()
-            ->with(['supplier:id,name'])
-            ->whereIn('status', ['borrador','enviado','recibido'])
-            ->latest('id');
+        'items.*.reason'  => 'nullable|in:faltante_proveedor,daño_transporte,backorder,error_pick,otro',
+        'items.*.comment' => 'nullable|string|max:500',
+    ]);
 
-        if ($q !== '') {
-            $ordersQuery->where(function ($w) use ($q) {
-                $w->where('order_number','ilike',"%{$q}%")
-                  ->orWhereHas('supplier', fn($s) => $s->where('name','ilike',"%{$q}%"));
-            });
-        }
+    $receipt = null;
 
-        $orders = $ordersQuery->limit(50)->get(['id','order_number','supplier_id','order_date','status','total']);
+    DB::transaction(function () use ($data, &$receipt) {
 
-        // 3) Si no hay order seleccionada y solo hay una disponible, autoseleccionar
-        if (!$selectedOrder && $orders->count() === 1) {
-            $selectedOrder = PurchaseOrder::with([
-                    'supplier:id,name',
-                    'items' => fn ($qi) => $qi->with(['product:id,name,code'])->orderBy('id'),
-                ])
-                ->find($orders->first()->id);
-        }
-
-        // 4) Productos (para agregar líneas sueltas manuales)
-        $products = Product::query()
-            ->where('active', true)
-            ->orderBy('name')
-            ->get(['id','name','code','price_cash']);
-
-        return view('purchase_receipts.create', [
-            'orders'        => $orders,
-            'selectedOrder' => $selectedOrder,
-            'products'      => $products,
-            'q'             => $q,
-        ]);
-    }
-
-    /**
-     * Guarda la recepción y sus ítems.
-     */
-    public function store(Request $request)
-    {
-        $data = $request->validate([
-            'purchase_order_id' => 'required|exists:purchase_orders,id',
-            'receipt_number'    => 'required|string',
-            'received_date'     => 'required|date',
-            'notes'             => 'nullable|string', // nueva
-            'items'             => 'required|array|min:1',
-            'items.*.product_id'   => 'required|exists:products,id',
-            'items.*.ordered_qty'  => 'required|integer|min:0',
-            'items.*.received_qty' => 'required|integer|min:0',
-            'items.*.unit_cost'    => 'nullable|numeric|min:0',
-            'items.*.reason'       => 'nullable|in:faltante_proveedor,daño_transporte,backorder,error_pick,otro',
-            'items.*.comment'      => 'nullable|string|max:500',
+        $receipt = PurchaseReceipt::create([
+            'purchase_order_id' => $data['purchase_order_id'],
+            'receipt_number'    => $data['receipt_number'],
+            'received_date'     => $data['received_date'],
+            'received_by'       => auth()->id(),
+            'status'            => 'pendiente_aprobacion',
+            'notes'             => $data['notes'] ?? null,
         ]);
 
-        $receipt = null;
+        foreach ($data['items'] as $row) {
 
-        DB::transaction(function () use ($data, &$receipt) {
-            $receipt = PurchaseReceipt::create([
-                'purchase_order_id' => $data['purchase_order_id'],
-                'receipt_number'    => $data['receipt_number'],
-                'received_date'     => $data['received_date'],
-                'received_by'       => auth()->id(),
-                'status'            => 'pendiente_aprobacion', // va a aprobación
-                'notes'             => $data['notes'] ?? null, // <-- GUARDAR
+            $cost = $row['unit_cost']
+                ?? $row['unit_price']
+                ?? 0;
+
+            PurchaseReceiptItem::create([
+                'purchase_receipt_id' => $receipt->id,
+                'product_id'          => $row['product_id'],
+                'ordered_qty'         => (int) $row['ordered_qty'],
+                'received_qty'        => (int) $row['received_qty'],
+
+                // ✅ guarda costo sin romper aunque venga como unit_price
+                'unit_cost'           => (float) $cost,
+
+                'reason'              => $row['reason']  ?? null,
+                'comment'             => $row['comment'] ?? null,
             ]);
+        }
+    });
 
-            foreach ($data['items'] as $row) {
-                PurchaseReceiptItem::create([
-                    'purchase_receipt_id' => $receipt->id,
-                    'product_id'          => $row['product_id'],
-                    'ordered_qty'         => $row['ordered_qty'],
-                    'received_qty'        => $row['received_qty'],
-                    'unit_cost'           => $row['unit_cost'] ?? 0,
-                    // NUEVO: guardar motivo y comentario
-                    'reason'              => $row['reason']   ?? null,
-                    'comment'             => $row['comment']  ?? null,
-                ]);
-            }
-        });
+    return redirect()
+        ->route('purchase_receipts.show', $receipt)
+        ->with('success', 'Recepción registrada');
+}
 
-        return redirect()
-            ->route('purchase_receipts.show', $receipt)
-            ->with('success', 'Recepción registrada');
-    }
 
     /**
      * Detalle de la recepción.
@@ -192,23 +145,26 @@ class PurchaseReceiptController extends Controller
      * Si ya lo manejas en PurchaseApprovalController, puedes eliminar este método
      * y mantener solo las rutas hacia ese controlador.
      */
-    public function approve(PurchaseReceipt $purchase_receipt)
-{       
+public function approve(PurchaseReceipt $purchase_receipt)
+{
     if ($purchase_receipt->status !== 'pendiente_aprobacion') {
         return back()->with('error', 'La recepción no está pendiente de aprobación');
     }
 
     DB::transaction(function () use ($purchase_receipt) {
 
+        // 🔹 Cargar relaciones necesarias
         $purchase_receipt->load([
-            'items',
+            'items.product',
             'order.items',
             'order.receipts.items',
         ]);
 
         // 1️⃣ Afectar stock
         foreach ($purchase_receipt->items as $item) {
-            $item->product->increment('stock', (int) $item->received_qty);
+            if ($item->product) {
+                $item->product->increment('stock', (int) $item->received_qty);
+            }
         }
 
         // 2️⃣ Aprobar recepción
@@ -218,46 +174,54 @@ class PurchaseReceiptController extends Controller
             'approved_at' => now(),
         ]);
 
-            // 3️⃣ Verificar si la OC está completamente recibida (query fresca)
-$order = $purchase_receipt->order;
+        // 3️⃣ Verificar estado de la Orden de Compra
+        $order = $purchase_receipt->order;
 
-// cantidades pedidas
-$orderedByProduct = $order->items
-    ->groupBy('product_id')
-    ->map(fn ($g) => (int) $g->sum('quantity'));
+        // Cantidades pedidas por producto
+        $orderedByProduct = $order->items
+            ->groupBy('product_id')
+            ->map(fn ($g) => (int) $g->sum('quantity'));
 
-// cantidades recibidas (solo recepciones aprobadas) -> desde BD
-$receivedRows = DB::table('purchase_receipt_items as pri')
-    ->join('purchase_receipts as pr', 'pr.id', '=', 'pri.purchase_receipt_id')
-    ->where('pr.purchase_order_id', $order->id)
-    ->where('pr.status', 'aprobado')
-    ->groupBy('pri.product_id')
-    ->selectRaw('pri.product_id, SUM(pri.received_qty) as qty')
-    ->get();
+        // Cantidades recibidas (solo recepciones aprobadas)
+        $receivedRows = DB::table('purchase_receipt_items as pri')
+            ->join('purchase_receipts as pr', 'pr.id', '=', 'pri.purchase_receipt_id')
+            ->where('pr.purchase_order_id', $order->id)
+            ->where('pr.status', 'aprobado')
+            ->groupBy('pri.product_id')
+            ->selectRaw('pri.product_id, SUM(pri.received_qty) as qty')
+            ->get();
 
-$receivedByProduct = $receivedRows->pluck('qty', 'product_id')->map(fn($v)=> (int)$v);
+        $receivedByProduct = $receivedRows
+            ->pluck('qty', 'product_id')
+            ->map(fn ($v) => (int) $v);
 
-// determinar estado
-$fullyReceived = true;
-$hasAnyReceived = false;
+        // Determinar estado final
+        $fullyReceived  = true;
+        $hasAnyReceived = false;
 
-foreach ($orderedByProduct as $productId => $orderedQty) {
-    $rec = (int) ($receivedByProduct[$productId] ?? 0);
-    if ($rec > 0) $hasAnyReceived = true;
-    if ($rec < (int)$orderedQty) { $fullyReceived = false; }
+        foreach ($orderedByProduct as $productId => $orderedQty) {
+            $receivedQty = (int) ($receivedByProduct[$productId] ?? 0);
+
+            if ($receivedQty > 0) {
+                $hasAnyReceived = true;
+            }
+
+            if ($receivedQty < $orderedQty) {
+                $fullyReceived = false;
+            }
+        }
+
+        // 4️⃣ Actualizar estado de la OC
+        if ($fullyReceived) {
+            $order->update(['status' => 'recibido']);
+        } elseif ($hasAnyReceived) {
+            $order->update(['status' => 'parcial']);
+        }
+    });
+
+    return back()->with('success', 'Recepción aprobada correctamente.');
 }
 
-// 4️⃣ Actualizar estado OC
-if ($fullyReceived) {
-    $order->update(['status' => 'recibido']);
-} elseif ($hasAnyReceived) {
-    $order->update(['status' => 'parcial']); // 👈 recomendado
-}
-
-        });
-
-        return back()->with('success', 'Recepción aprobada correctamente.');
-    }
 
         /**
          * Rechazar recepción (sin afectar stock).

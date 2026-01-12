@@ -11,9 +11,15 @@ class CatalogController extends Controller
 {
     /**
      * Catálogo tipo ecommerce (responsive).
+     * ⚠️ Desactivado por feature flag
      */
     public function index(Request $request)
     {
+        // 🔒 Ecommerce desactivado (no rompe nada)
+        if (!config('features.ecommerce')) {
+            abort(404);
+        }
+
         $search     = trim((string) $request->input('q', ''));
         $categoryId = $request->input('category_id');
         $brandId    = $request->input('brand_id');
@@ -21,7 +27,7 @@ class CatalogController extends Controller
         if ($perPage <= 0) $perPage = 24;
 
         $products = Product::query()
-            ->with(['coverImage', 'images']) // importante para cover_url e images_urls
+            ->with(['coverImage', 'images']) // cover_url + images_urls
             ->when($search !== '', function ($q) use ($search) {
                 $q->where(function ($sub) use ($search) {
                     $sub->where('name', 'ilike', "%{$search}%")
@@ -49,3 +55,4 @@ class CatalogController extends Controller
         ]);
     }
 }
+

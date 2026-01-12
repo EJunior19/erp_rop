@@ -140,26 +140,7 @@
       @endif
     </div>
 
-    {{-- AUTOMATIZACIONES --}}
-    <h6 class="text-xs uppercase tracking-wider text-gray-400 px-2 mt-4">Automatizaciones</h6>
-
-    <a href="{{ route('credits.dashboard') }}"
-       class="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-gray-800 transition
-              {{ request()->routeIs('credits.dashboard') ? 'bg-gray-800 text-white' : '' }}">
-      🧮 <span>Panel de créditos</span>
-    </a>
-
-    <a href="{{ route('bot.index') }}"
-       class="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-gray-800 transition
-              {{ request()->routeIs('bot.*') ? 'bg-gray-800 text-white' : '' }}">
-      🤖 <span>Bot de Telegram</span>
-    </a>
-
-    <a href="{{ route('contact.index') }}"
-       class="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-gray-800">
-      🗨️ <span>Contactos con Clientes</span>
-    </a>
-
+  
     {{-- CATÁLOGO --}}
     <h6 class="text-xs uppercase tracking-wider text-gray-400 px-2 mt-4">Catálogo</h6>
 
@@ -175,13 +156,7 @@
 
     <div x-show="openCatalogo" x-collapse class="ml-6 mt-2 space-y-1">
 
-      {{-- ✅ Vista Ecommerce ahora apunta a TU catálogo real --}}
-      <a href="{{ route('ecommerce.vista') }}"
-        class="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-gray-800 transition
-                {{ request()->routeIs('ecommerce.vista') ? 'bg-emerald-700/40 text-emerald-300' : '' }}">
-        🛒 <span>Vista Ecommerce</span>
-      </a>
-
+     
       <a href="{{ route('products.index') }}"
          class="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-gray-800 transition
                 {{ request()->routeIs('products.*') ? 'bg-gray-800 text-white' : '' }}">

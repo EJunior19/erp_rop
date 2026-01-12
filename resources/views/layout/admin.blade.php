@@ -41,8 +41,7 @@
         </button>
 
         <a href="{{ route('dashboard.index') }}" class="font-bold text-lg text-gray-100">
-          ERP Katuete Importados
-        </a>
+          ERP Roperia        </a>
 
         {{-- Breadcrumbs --}}
         @hasSection('breadcrumbs')

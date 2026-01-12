@@ -16,19 +16,26 @@
         <label class="text-sm">Orden de compra</label>
         <select name="purchase_order_id"
                 class="w-full bg-gray-800 border border-gray-700 rounded p-2"
-                required>
+                required
+                onchange="if(this.value){ window.location='{{ route('purchase_receipts.create') }}?order='+this.value }">
           <option value="">Seleccione…</option>
           @foreach($orders as $o)
-            <option value="{{ $o->id }}">
-              {{ $o->order_number }} — {{ $o->supplier->name }}
+            <option value="{{ $o->id }}" @selected(optional($order)->id === $o->id)>
+              {{ $o->order_number }} — {{ optional($o->supplier)->name ?? 'Sin proveedor' }}
             </option>
           @endforeach
         </select>
+
+        {{-- Mantener q si venís filtrando --}}
+        @if(!empty($q))
+          <input type="hidden" name="q" value="{{ $q }}">
+        @endif
       </div>
 
       <div>
         <label class="text-sm">Remito / Guía</label>
         <input name="receipt_number"
+               value="{{ old('receipt_number') }}"
                class="w-full bg-gray-800 border border-gray-700 rounded p-2"
                required>
       </div>
@@ -39,8 +46,9 @@
                name="received_date_display"
                class="date-input w-full bg-gray-800 border border-gray-700 rounded p-2"
                placeholder="dd/mm/yy"
+               value="{{ old('received_date_display') }}"
                required>
-        <input type="hidden" name="received_date">
+        <input type="hidden" name="received_date" value="{{ old('received_date') }}">
       </div>
     </div>
 
@@ -54,6 +62,10 @@
               class="mt-2 px-3 py-1 border border-gray-600 rounded hover:bg-gray-800">
         + Agregar ítem
       </button>
+
+      <p class="text-xs text-gray-400 mt-2">
+        Tip: Elegí una Orden de Compra y se cargan automáticamente sus ítems. Podés ajustar la cantidad recibida y el costo.
+      </p>
     </div>
 
     {{-- ================= NOTAS ================= --}}
@@ -77,13 +89,12 @@
 ========================================================= --}}
 <script>
 function formatMoney(value) {
-    value = value.replace(/\D/g, "");
+    value = String(value ?? '').replace(/\D/g, "");
     if (!value) return "";
     return parseInt(value, 10).toLocaleString("es-PY");
 }
-
 function unformatMoney(value) {
-    return value.replace(/\./g, "");
+    return String(value ?? '').replace(/\./g, "");
 }
 
 document.addEventListener("input", function (e) {
@@ -109,7 +120,6 @@ function autoSlashDate(input) {
     if (v.length >= 6) v = v.slice(0,5) + "/" + v.slice(5,9);
     input.value = v;
 }
-
 function parseDateToISO(value) {
     if (!value) return "";
     const parts = value.split("/");
@@ -117,6 +127,9 @@ function parseDateToISO(value) {
 
     let [dd, mm, yy] = parts;
     if (yy.length === 2) yy = "20" + yy;
+
+    // Validación básica
+    if (dd.length < 1 || mm.length < 1 || yy.length < 4) return "";
 
     return `${yy}-${mm.padStart(2,"0")}-${dd.padStart(2,"0")}`;
 }
@@ -134,20 +147,33 @@ document.getElementById("purchaseReceiptForm")
 </script>
 
 {{-- =========================================================
-   ➕ AGREGAR FILAS
+   ➕ AGREGAR FILAS (soporta precarga desde $items)
 ========================================================= --}}
 <script>
-function rowTemplate(idx) {
+/**
+ * rowsFromServer viene precargado desde PHP:
+ * - Si viene ?order=ID, $items trae los productos/qty de la OC
+ * - Si no, queda vacío y arrancamos con 1 fila
+ */
+const rowsFromServer = @json(($items ?? collect())->values());
+
+function rowTemplate(idx, prefill = {}) {
+  const pid     = prefill.product_id ?? '';
+  const ordered = prefill.ordered_qty ?? '';
+  const received= prefill.received_qty ?? '';
+  const cost    = prefill.unit_cost ?? '';
+
   return `
   <div class="grid md:grid-cols-4 gap-2 border border-gray-700 rounded p-2">
-
     <div>
       <select name="items[${idx}][product_id]"
               class="w-full bg-gray-800 border border-gray-700 rounded p-2"
               required>
         <option value="">Producto…</option>
         @foreach($products as $p)
-          <option value="{{ $p->id }}">{{ $p->name }}</option>
+          <option value="{{ $p->id }}" ${String(pid)==='{{ $p->id }}' ? 'selected' : ''}>
+            {{ $p->name }}
+          </option>
         @endforeach
       </select>
     </div>
@@ -157,7 +183,8 @@ function rowTemplate(idx) {
              min="0"
              name="items[${idx}][ordered_qty]"
              class="w-full bg-gray-800 border border-gray-700 rounded p-2"
-             placeholder="Pedida">
+             placeholder="Pedida"
+             value="${ordered}">
     </div>
 
     <div>
@@ -165,25 +192,40 @@ function rowTemplate(idx) {
              min="0"
              name="items[${idx}][received_qty]"
              class="w-full bg-gray-800 border border-gray-700 rounded p-2"
-             placeholder="Recibida">
+             placeholder="Recibida"
+             value="${received}">
     </div>
 
     <div>
       <input type="text"
              name="items[${idx}][unit_cost]"
              class="precio-input w-full bg-gray-800 border border-gray-700 rounded p-2"
-             placeholder="Costo">
+             placeholder="Costo"
+             value="${cost}">
     </div>
-
   </div>`;
 }
 
 let idx = 0;
-function addRow() {
-    document.getElementById('items')
-        .insertAdjacentHTML('beforeend', rowTemplate(idx++));
+
+function addRow(prefill = {}) {
+  document.getElementById('items')
+    .insertAdjacentHTML('beforeend', rowTemplate(idx, prefill));
+  idx++;
 }
-addRow();
+
+(function bootRows(){
+  if (rowsFromServer && rowsFromServer.length) {
+    rowsFromServer.forEach(r => addRow(r));
+  } else {
+    addRow(); // 1 fila por defecto
+  }
+
+  // Formatear costos precargados (si vinieron)
+  document.querySelectorAll('.precio-input').forEach(inp => {
+    inp.value = formatMoney(inp.value);
+  });
+})();
 </script>
 
 @endsection

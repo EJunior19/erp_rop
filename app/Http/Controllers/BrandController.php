@@ -62,7 +62,7 @@ class BrandController extends Controller
         $brand = Brand::create($data);
 
         return redirect()
-            ->route('brands.show', $brand)
+            ->route('brands.index', $brand)
             ->with('ok', '✅ Marca creada correctamente.');
     }
 

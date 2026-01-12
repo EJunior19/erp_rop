@@ -54,8 +54,6 @@
   </template>
 </div>
 
-{{-- Mensajes flash --}}
-<x-flash-message />
 
 <div class="bg-slate-900 text-white rounded-xl shadow-md border border-slate-700">
 

@@ -9,7 +9,7 @@ use App\Models\Supplier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Validation\Rule; // ✅ FALTABA
+use Illuminate\Validation\Rule;
 use App\Models\InventoryMovement;
 
 class ProductController extends Controller
@@ -28,37 +28,49 @@ class ProductController extends Controller
         return (int) preg_replace('/\D+/', '', (string) $v);
     }
 
+    /**
+     * Normaliza el código/SKU:
+     * - trim
+     * - uppercase
+     * - si queda vacío => null (para que el trigger lo genere)
+     */
+    private function normalizeCode($code): ?string
+    {
+        if ($code === null) return null;
+        $c = strtoupper(trim((string) $code));
+        return $c === '' ? null : $c;
+    }
+
     /* =======================
      * VISTAS CRUD
      * ======================= */
 
     public function index(Request $request)
-{
-    $q = trim($request->get('q'));
+    {
+        $q = trim($request->get('q'));
 
-    $products = Product::with(['brand','category','supplier'])
-        ->when($q, function ($query) use ($q) {
-            $query->where(function ($q2) use ($q) {
-                $q2->where('code', 'ILIKE', "%{$q}%")
-                   ->orWhere('name', 'ILIKE', "%{$q}%")
-                   ->orWhereHas('brand', function ($b) use ($q) {
-                       $b->where('name', 'ILIKE', "%{$q}%");
-                   })
-                   ->orWhereHas('category', function ($c) use ($q) {
-                       $c->where('name', 'ILIKE', "%{$q}%");
-                   })
-                   ->orWhereHas('supplier', function ($s) use ($q) {
-                       $s->where('name', 'ILIKE', "%{$q}%");
-                   });
-            });
-        })
-        ->orderBy('id', 'desc')
-        ->paginate(15)
-        ->withQueryString(); // 👈 mantiene ?q= en la paginación
+        $products = Product::with(['brand','category','supplier'])
+            ->when($q, function ($query) use ($q) {
+                $query->where(function ($q2) use ($q) {
+                    $q2->where('code', 'ILIKE', "%{$q}%")
+                       ->orWhere('name', 'ILIKE', "%{$q}%")
+                       ->orWhereHas('brand', function ($b) use ($q) {
+                           $b->where('name', 'ILIKE', "%{$q}%");
+                       })
+                       ->orWhereHas('category', function ($c) use ($q) {
+                           $c->where('name', 'ILIKE', "%{$q}%");
+                       })
+                       ->orWhereHas('supplier', function ($s) use ($q) {
+                           $s->where('name', 'ILIKE', "%{$q}%");
+                       });
+                });
+            })
+            ->orderBy('id', 'desc')
+            ->paginate(15)
+            ->withQueryString();
 
-    return view('products.index', compact('products'));
-}
-
+        return view('products.index', compact('products'));
+    }
 
     public function create()
     {
@@ -86,105 +98,105 @@ class ProductController extends Controller
     }
 
     public function store(Request $request)
-    {
-        // 1) Normalizar entradas (enteros en Gs)
-        $priceCash = $this->cleanInt($request->input('price_cash'));
+{
+    // 1) Normalizar entradas (enteros en Gs)
+    $priceCash = $this->cleanInt($request->input('price_cash'));
 
-        // Acepta ambos nombres por compatibilidad
-        $rawInstallmentPrices = (array) $request->input('installment_prices', $request->input('installment_price', []));
-        $installmentPrices    = array_map(fn($v) => $this->cleanInt($v), $rawInstallmentPrices);
-        $installments         = (array) $request->input('installments', []);
+    $rawInstallmentPrices = (array) $request->input('installment_prices', $request->input('installment_price', []));
+    $installmentPrices    = array_map(fn($v) => $this->cleanInt($v), $rawInstallmentPrices);
+    $installments         = (array) $request->input('installments', []);
 
-        $request->merge([
-            'price_cash'         => $priceCash,
-            'installment_prices' => $installmentPrices,
-            'installments'       => $installments,
+    $request->merge([
+        'price_cash'         => $priceCash,
+        'installment_prices' => $installmentPrices,
+        'installments'       => $installments,
+    ]);
+
+    // 2) Validación (ACÁ NO se hace lógica, solo reglas)
+    $validated = $request->validate([
+        'name'        => ['required','string','max:255'],
+
+        // ✅ code opcional + único
+        'code'        => ['nullable','string','max:255','unique:products,code'],
+
+        'brand_id'    => ['required','exists:brands,id'],
+        'category_id' => ['required','exists:categories,id'],
+        'supplier_id' => ['required','exists:suppliers,id'],
+
+        'price_cash'  => ['nullable','integer','min:0'],
+        'active'      => ['nullable','boolean'],
+        'notes'       => ['nullable','string'],
+
+        'installments'         => ['array'],
+        'installments.*'       => ['nullable','integer','min:1'],
+        'installment_prices'   => ['array'],
+        'installment_prices.*' => ['nullable','integer','min:0'],
+
+        'images'   => ['sometimes','array'],
+        'images.*' => ['nullable','image','max:4096'],
+    ]);
+
+    // ✅ 3) Normalizar code DESPUÉS de validar (manual opcional)
+    $code = $validated['code'] ?? null;
+    $code = ($code !== null && trim($code) !== '') ? strtoupper(trim($code)) : null;
+
+    $product = null;
+
+    // 4) Persistencia
+    DB::transaction(function () use ($request, $validated, $installments, $installmentPrices, $code, &$product) {
+
+        $product = Product::create([
+            'code'        => $code, // ✅ si es null => tu booted() genera PRD-00001
+            'name'        => $validated['name'],
+            'brand_id'    => $validated['brand_id'],
+            'category_id' => $validated['category_id'],
+            'supplier_id' => $validated['supplier_id'],
+            'price_cash'  => $validated['price_cash'] ?? null,
+            'stock'       => 0,
+            'active'      => (bool)($validated['active'] ?? true),
+            'notes'       => $validated['notes'] ?? null,
         ]);
 
-        // 2) Validación
-        $validated = $request->validate([
-            'name'        => ['required','string','max:255'],
-
-            // ✅ CÓDIGO MANUAL (opcional) + único
-            'code'        => ['nullable','string','max:255','unique:products,code'],
-
-            'brand_id'    => ['required','exists:brands,id'],
-            'category_id' => ['required','exists:categories,id'],
-            'supplier_id' => ['required','exists:suppliers,id'],
-
-            'price_cash'  => ['nullable','integer','min:0'],
-
-            // ⚠️ Si usás checkbox, a veces no llega en request -> mejor nullable con default true
-            'active'      => ['nullable','boolean'],
-
-            'notes'       => ['nullable','string'],
-
-            'installments'         => ['array'],
-            'installments.*'       => ['nullable','integer','min:1'],
-            'installment_prices'   => ['array'],
-            'installment_prices.*' => ['nullable','integer','min:0'],
-
-            // 📷 imágenes (múltiples)
-            'images'   => ['sometimes','array'],
-            'images.*' => ['nullable','image','max:4096'],
-        ]);
-
-        $product = null;
-
-        // 3) Persistencia
-        DB::transaction(function () use ($request, $validated, $installments, $installmentPrices, &$product) {
-
-            $product = Product::create([
-                'code'        => filled($validated['code'] ?? null) ? trim($validated['code']) : null, // ✅ GUARDAR CODE
-                'name'        => $validated['name'],
-                'brand_id'    => $validated['brand_id'],
-                'category_id' => $validated['category_id'],
-                'supplier_id' => $validated['supplier_id'],
-                'price_cash'  => $validated['price_cash'] ?? null,
-                'stock'       => 0, // si querés stock inicial manual, agregalo al form y validate
-                'active'      => (bool)($validated['active'] ?? true),
-                'notes'       => $validated['notes'] ?? null,
-            ]);
-
-            // Cuotas
-            $rows = [];
-            foreach ($installments as $i => $n) {
-                $n = (int) $n;
-                $p = $installmentPrices[$i] ?? null;
-                if ($n && $p !== null && $p > 0) {
-                    $rows[] = [
-                        'installments'      => $n,
-                        'installment_price' => (int) $p,
-                    ];
-                }
+        // Cuotas
+        $rows = [];
+        foreach ($installments as $i => $n) {
+            $n = (int) $n;
+            $p = $installmentPrices[$i] ?? null;
+            if ($n && $p !== null && $p > 0) {
+                $rows[] = [
+                    'installments'      => $n,
+                    'installment_price' => (int) $p,
+                ];
             }
-            if (!empty($rows)) {
-                $product->installments()->createMany($rows);
+        }
+        if (!empty($rows)) {
+            $product->installments()->createMany($rows);
+        }
+
+        // Imágenes (primera = portada)
+        if ($request->hasFile('images')) {
+            foreach ($request->file('images') as $idx => $img) {
+                if (!$img) continue;
+
+                $path = $img->store('products', 'public');
+
+                $product->images()->create([
+                    'path'       => $path,
+                    'alt'        => $product->name,
+                    'is_cover'   => $idx === 0,
+                    'sort_order' => $idx,
+                ]);
             }
+        }
+    });
 
-            // Imágenes (primera = portada)
-            if ($request->hasFile('images')) {
-                foreach ($request->file('images') as $idx => $img) {
-                    if (!$img) continue;
+    return redirect()
+        ->route('products.show', $product)
+        ->with('success', "Producto {$product->name} creado correctamente.");
+}
 
-                    $path = $img->store('products', 'public');
 
-                    $product->images()->create([
-                        'path'       => $path,
-                        'alt'        => $product->name,
-                        'is_cover'   => $idx === 0,
-                        'sort_order' => $idx,
-                    ]);
-                }
-            }
-        });
-
-        return redirect()
-            ->route('products.show', $product)
-            ->with('success', "Producto {$product->name} creado correctamente.");
-    }
-
-   public function show(Product $product)
+    public function show(Product $product)
     {
         $product->load([
             'brand',
@@ -240,7 +252,7 @@ class ProductController extends Controller
             'name' => ['required','string','max:255'],
 
             // ✅ CODE MANUAL + UNIQUE IGNORANDO EL MISMO PRODUCTO
-            'code' => ['nullable','string','max:255', Rule::unique('products','code')->ignore($product->id)],
+           'code' => ['nullable','string','max:255', Rule::unique('products','code')->ignore($product->id)],
 
             'brand_id'    => ['required','exists:brands,id'],
             'category_id' => ['required','exists:categories,id'],
@@ -262,11 +274,17 @@ class ProductController extends Controller
             'orders'   => ['sometimes','array'],
         ]);
 
+        // ✅ Normalizar code: uppercase + trim; vacío => null (trigger genera)
+        $validated['code'] = $this->normalizeCode($validated['code'] ?? null);
+
         DB::transaction(function () use ($request, $product, $validated, $installments, $installmentPrices) {
 
             // ✅ Actualizar cabecera (incluye code)
             $product->update([
-                'code'        => filled($validated['code'] ?? null) ? trim($validated['code']) : null,
+                // NULL => trigger genera automáticamente (si tu trigger está para UPDATE también).
+                // Si tu trigger solo genera en INSERT, y querés permitir “vaciar” en UPDATE,
+                // asegurate que el trigger lo soporte o dejá el code actual.
+                'code'        => $validated['code'],
                 'name'        => $validated['name'],
                 'brand_id'    => $validated['brand_id'],
                 'category_id' => $validated['category_id'],
@@ -275,6 +293,9 @@ class ProductController extends Controller
                 'active'      => (bool)($validated['active'] ?? true),
                 'notes'       => $validated['notes'] ?? null,
             ]);
+
+            // Si el trigger ajusta code en UPDATE, refrescamos
+            $product->refresh();
 
             // Reemplazar cuotas
             $product->installments()->delete();

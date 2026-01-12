@@ -101,35 +101,72 @@ public function index(Request $request)
 
     /** Crear proveedor */
     public function store(Request $request)
-    {
-        $validated = $request->validate([
-            'name'    => ['required','string','max:255'],
-            'ruc'     => ['nullable','string','max:50','unique:suppliers,ruc'],
-            'phone'   => ['nullable','string','max:50'],
-            'email'   => ['nullable','email','max:255'],
-            'address' => ['nullable','string','max:255'],
-            'notes'   => ['nullable','string'],
-            'active'  => ['required','boolean'],
+{
+    $validated = $request->validate([
+        'name'    => ['required','string','max:255'],
+        'ruc'     => ['nullable','string','max:50','unique:suppliers,ruc'],
+        'phone'   => ['nullable','string','max:50'],
+        'email'   => ['nullable','email','max:255'],
+        'address' => ['nullable','string','max:255'],
+        'notes'   => ['nullable','string'],
+        'active'  => ['required','boolean'],
+    ]);
+
+    try {
+        // 1) Guardar SOLO columnas reales de suppliers
+        $supplier = Supplier::create([
+            'name'   => $validated['name'],
+            'ruc'    => $validated['ruc'] ?? null,
+            'notes'  => $validated['notes'] ?? null,
+            'active' => (bool) $validated['active'],
         ]);
 
-        try {
-            $supplier = Supplier::create($validated);
-            $supplier->refresh(); // para leer 'code' si lo genera un trigger
+        $supplier->refresh(); // leer code generado por trigger
 
-            return redirect()
-                ->route('suppliers.show', $supplier)
-                ->with('success', 'Proveedor ' . $supplier->name . ' creado (código ' . ($supplier->code ?? '—') . ').');
-        } catch (UniqueConstraintViolationException $e) {
-            return back()
-                ->withErrors(['ruc' => 'Ese RUC ya está registrado.'])
-                ->withInput();
-        } catch (QueryException $e) {
-            if (str_contains(strtolower($e->getMessage()), 'unique') && str_contains($e->getMessage(), 'ruc')) {
-                return back()->withErrors(['ruc' => 'Ese RUC ya está registrado.'])->withInput();
-            }
-            throw $e;
+        // 2) Guardar principales en tablas hijas (si vinieron)
+        if (!empty($validated['phone'])) {
+            $supplier->phones()->create([
+                'phone_number' => $validated['phone'],
+                'type'         => 'principal',
+                'is_active'    => true,
+                'is_primary'   => true,
+            ]);
         }
+
+        if (!empty($validated['email'])) {
+            $supplier->emails()->create([
+                'email'      => $validated['email'],
+                'type'       => 'compras',  // o 'general' si preferís
+                'is_active'  => true,
+                'is_default' => true,
+            ]);
+        }
+
+        if (!empty($validated['address'])) {
+            $supplier->addresses()->create([
+                'street'     => $validated['address'],
+                'city'       => 'Katuete',   // o null si tu tabla permite
+                'state'      => null,
+                'country'    => 'Paraguay',
+                'type'       => 'fiscal',    // según tu Rule::in
+                'is_primary' => true,
+            ]);
+        }
+
+        return redirect()
+            ->route('suppliers.index', $supplier)
+            ->with('success', 'Proveedor ' . $supplier->name . ' creado (código ' . ($supplier->code ?? '—') . ').');
+
+    } catch (UniqueConstraintViolationException $e) {
+        return back()->withErrors(['ruc' => 'Ese RUC ya está registrado.'])->withInput();
+    } catch (QueryException $e) {
+        if (str_contains(strtolower($e->getMessage()), 'unique') && str_contains($e->getMessage(), 'ruc')) {
+            return back()->withErrors(['ruc' => 'Ese RUC ya está registrado.'])->withInput();
+        }
+        throw $e;
     }
+}
+
     
 
     /** Detalle enriquecido */
@@ -185,34 +222,83 @@ public function index(Request $request)
 
     /** Actualizar proveedor */
     public function update(Request $request, Supplier $supplier)
-    {
-        $validated = $request->validate([
-            'name'    => ['required','string','max:255'],
-            'ruc'     => ['nullable','string','max:50', Rule::unique('suppliers','ruc')->ignore($supplier->id)],
-            'phone'   => ['nullable','string','max:50'],
-            'email'   => ['nullable','email','max:255'],
-            'address' => ['nullable','string','max:255'],
-            'notes'   => ['nullable','string'],
-            'active'  => ['required','boolean'],
+{
+    $validated = $request->validate([
+        'name'    => ['required','string','max:255'],
+        'ruc'     => ['nullable','string','max:50', Rule::unique('suppliers','ruc')->ignore($supplier->id)],
+        'phone'   => ['nullable','string','max:50'],
+        'email'   => ['nullable','email','max:255'],
+        'address' => ['nullable','string','max:255'],
+        'notes'   => ['nullable','string'],
+        'active'  => ['required','boolean'],
+    ]);
+
+    try {
+        // 1) Actualizar SOLO suppliers
+        $supplier->update([
+            'name'   => $validated['name'],
+            'ruc'    => $validated['ruc'] ?? null,
+            'notes'  => $validated['notes'] ?? null,
+            'active' => (bool) $validated['active'],
         ]);
 
-        try {
-            $supplier->update($validated);
+        // 2) Actualizar principal (si vino)
+        if (!empty($validated['phone'])) {
+            $supplier->phones()->update(['is_primary' => false]);
 
-            return redirect()
-                ->route('suppliers.show', $supplier)
-                ->with('success', 'Proveedor actualizado con éxito.');
-        } catch (UniqueConstraintViolationException $e) {
-            return back()
-                ->withErrors(['ruc' => 'Ese RUC ya está registrado.'])
-                ->withInput();
-        } catch (QueryException $e) {
-            if (str_contains(strtolower($e->getMessage()), 'unique') && str_contains($e->getMessage(), 'ruc')) {
-                return back()->withErrors(['ruc' => 'Ese RUC ya está registrado.'])->withInput();
-            }
-            throw $e;
+            // si ya existe, marcarlo primary; si no, crear
+            $phone = $supplier->phones()->firstOrCreate(
+                ['phone_number' => $validated['phone']],
+                ['type' => 'principal', 'is_active' => true]
+            );
+            $phone->update(['is_primary' => true, 'is_active' => true]);
         }
+
+        if (!empty($validated['email'])) {
+            // un default por tipo (compras)
+            $supplier->emails()->where('type', 'compras')->update(['is_default' => false]);
+
+            $email = $supplier->emails()->firstOrCreate(
+                ['email' => $validated['email']],
+                ['type' => 'compras', 'is_active' => true]
+            );
+            $email->update(['type' => 'compras', 'is_default' => true, 'is_active' => true]);
+        }
+
+        if (!empty($validated['address'])) {
+            $supplier->addresses()->update(['is_primary' => false]);
+
+            // si ya existe esa street, marcar primary; si no, crear mínimo
+            $addr = $supplier->addresses()->where('street', $validated['address'])->first();
+
+            if ($addr) {
+                $addr->update(['is_primary' => true]);
+            } else {
+                $supplier->addresses()->create([
+                    'street'     => $validated['address'],
+                    'city'       => 'Katuete',
+                    'state'      => null,
+                    'country'    => 'Paraguay',
+                    'type'       => 'fiscal',
+                    'is_primary' => true,
+                ]);
+            }
+        }
+
+        return redirect()
+            ->route('suppliers.show', $supplier)
+            ->with('success', 'Proveedor actualizado con éxito.');
+
+    } catch (UniqueConstraintViolationException $e) {
+        return back()->withErrors(['ruc' => 'Ese RUC ya está registrado.'])->withInput();
+    } catch (QueryException $e) {
+        if (str_contains(strtolower($e->getMessage()), 'unique') && str_contains($e->getMessage(), 'ruc')) {
+            return back()->withErrors(['ruc' => 'Ese RUC ya está registrado.'])->withInput();
+        }
+        throw $e;
     }
+}
+
 
     /** Eliminar (soft o hard según tu modelo) */
     public function destroy(Supplier $supplier)

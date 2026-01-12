@@ -382,9 +382,7 @@ class SaleController extends Controller
         return redirect()->route('sales.show', $sale)
             ->with('success', 'Estado actualizado correctamente.');
     }
-    use App\Models\Sale;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
+
 
 public function destroy(Sale $sale)
 {
